@@ -266,16 +266,16 @@ impl<'a> Hitresult<'a> {
 			self.add(s1);
 
 			//let nmap = Texture::open("C:/Users/Jo/Desktop/normal.jpg");
-			let tex = Texture::open("C:/Users/Jo/Desktop/download.png");
+			//let tex = Texture::open("C:/Users/Jo/Desktop/download.png");
 			//let mut mesh = open("C:/Users/Jo/Desktop/test.txt");
-			let mut mesh = open("C:/Users/Jo/Desktop/tea_pot.obj");
+			//let mut mesh = open("C:/Users/Jo/Desktop/tea_pot.obj");
 			//let mut mesh = open("C:/Users/Jo/Desktop/box.obj");
-			mesh.scale(0.1);
-			mesh.translate(Vector::new(0.,0.,-5.));
-			let mut mg = Geo::create_mesh(mesh);
-			mg.material.texmap_diffuse = Some(tex);
+			//mesh.scale(0.1);
+			//mesh.translate(Vector::new(0.,0.,-5.));
+			//let mut mg = Geo::create_mesh(mesh);
+			//mg.material.texmap_diffuse = Some(tex);
 			//mg.material.texmap_normal = Some(nmap);
-			mg.material.reflection = true;
+			//mg.material.reflection = true;
 			//self.add(mg);
 
 
