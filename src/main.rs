@@ -1,7 +1,7 @@
 mod renderer;
 use renderer::*;
 use renderer::color::Color;
-
+use std::sync::Arc;
 use std::thread;
 
 fn main() {
@@ -46,18 +46,41 @@ pub mod display
     const HEIGHT: u32 = 500;
     
     pub fn render_frame() -> image::RgbaImage {
-        let mut re = Renderer::new(WIDTH as usize, HEIGHT as usize);
-        re.init();
+        let re = Renderer::new(WIDTH as usize, HEIGHT as usize);
+        let counter = Arc::new(re);
         let mut img = image::RgbaImage::new(WIDTH,HEIGHT);
 
-        for x in 0..WIDTH {
-            for y in 0..HEIGHT 
-            {
-                let pixel = re.render(x as i32,y as i32);
-                img.put_pixel(x,y,image::Rgba([pixel.0, pixel.1,pixel.2,255]));
-            }
+        let mut threads = vec!();
 
+        for x in 0..WIDTH {
+                //let pixel = re.render(x as i32,y as i32);
+                //img.put_pixel(x,y,image::Rgba([pixel.0, pixel.1,pixel.2,255]));
+                let r = Arc::clone(&counter);
+                let _x = x as i32;
+                let thread = thread::spawn(move || {
+                    let mut col = vec!();
+                    for y in 0..HEIGHT 
+                    {
+                        let _y = y as i32;
+                        let pixel = r.render(x as i32,y as i32);
+                        col.push(pixel);
+                    }
+                    col
+                }); 
+                threads.push(thread);
+                
         }
+        let mut x = 0;
+        for i in threads {
+            let col = i.join().unwrap();
+            let mut y =0;
+            for pixel in col { 
+                img.put_pixel(x,y,image::Rgba([pixel.0, pixel.1,pixel.2,255]));
+                y+=1;
+            }
+            x+=1;
+        }
+        print!("done");
     img
     }
 

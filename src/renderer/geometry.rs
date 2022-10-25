@@ -18,11 +18,11 @@ pub struct Light {
 impl Light {
     pub fn new() -> Light{Light{pos:Vector::empty(), color:Color::white(), power:0.3}}
 
-    pub fn calc_falloff(&self, _pos:Vector) -> f32 {
-        //let dist = (pos - self.pos).length();
-        //let fall = dist.powi(2) * 4. * 3.14159265359;
-        //3000. * self.power / fall
-        self.power
+    pub fn calc_falloff(&self, pos:Vector) -> f32 {
+        let dist = (pos - self.pos).length();
+        let fall = dist.powi(2) * 4. * 3.14159265359;
+        3000. * self.power / fall
+        //self.power
     }
 }
 

@@ -229,7 +229,7 @@ impl<'a> Hitresult<'a> {
 		pub fn init(&mut self) {
 
 			let mut s2 = Geo::new();
-			s2.pos.z = -20.;
+			s2.pos.z = 0.0;
 			s2.pos.x = 10.;
 			s2.pos.y = -5.;
 			s2.shape = Shape::Sphere(12.);
@@ -247,12 +247,12 @@ impl<'a> Hitresult<'a> {
 			s2.material.spec = BRDF::Phong;
 			s2.material.reflection = true;
 			//s2.material.diffuse = BRDF::None;
-			self.add(s2);
+			//self.add(s2);
 
 			let mut s = Geo::create_sphere(Vector::new(-2.,-8.,-20.));
 			s.material.color = Color::red();
 			s.set_size(3.);
-			self.add(s);
+			//self.add(s);
 
 
 
@@ -263,20 +263,20 @@ impl<'a> Hitresult<'a> {
 			//s1.material.color = Color::black();
 			//s1.material = Material::new_light_material();
 			s1.set_size(4.);
-			self.add(s1);
+			//self.add(s1);
 
 			//let nmap = Texture::open("C:/Users/Jo/Desktop/normal.jpg");
 			//let tex = Texture::open("C:/Users/Jo/Desktop/download.png");
-			//let mut mesh = open("C:/Users/Jo/Desktop/test.txt");
+			let mut mesh = open("C:/Users/j.krein/Desktop/box.obj");
 			//let mut mesh = open("C:/Users/Jo/Desktop/tea_pot.obj");
 			//let mut mesh = open("C:/Users/Jo/Desktop/box.obj");
-			//mesh.scale(0.1);
+			mesh.scale(0.1);
 			//mesh.translate(Vector::new(0.,0.,-5.));
-			//let mut mg = Geo::create_mesh(mesh);
+			let mut mg = Geo::create_mesh(mesh);
 			//mg.material.texmap_diffuse = Some(tex);
 			//mg.material.texmap_normal = Some(nmap);
 			//mg.material.reflection = true;
-			//self.add(mg);
+			self.add(mg);
 
 
 			//let tex2 = Texture::open("C:/Users/Jo/Desktop/uv.jpg");
@@ -309,8 +309,10 @@ impl<'a> Hitresult<'a> {
 			l2.color = Color::new(1.,1.,0.5);
 			self.lights.push(l2);
 
-			//self.create_light_cache();
-			self.create_ir();
+
+            println!("starting IR generation");
+			//self.create_ir();
+            println!("Init complete");
 		}
 		pub fn reads_gi(&self, m:&Material) -> bool {
 			if m.color == Color::black() {return false}
@@ -478,8 +480,9 @@ impl<'a> Hitresult<'a> {
 		}
 		pub fn pixel_to_float(&self, s:f32, t:f32) -> (f32,f32) {
 			let (w,h) = self.image_size;
-			let x = s - w as f32/ 2.;
-			let y = t - h as f32/ 2.;
+            let ratio = w as f32 / h as f32;
+			let x = s / w as f32 * ratio;
+            let y = t / h as f32 ;
 			(x,y)
 		}
 		pub fn ray_from_pixel(&self, x: f32, y: f32) -> Ray{
@@ -497,6 +500,7 @@ impl<'a> Hitresult<'a> {
 			}
 			out / (samples * samples) as f32
 		}
+
 		pub fn super_sample_bokeh(&self, x: f32, y:f32) -> Color {
 			let samples = 20;
 			let focal_dist = 10.0;
@@ -526,6 +530,7 @@ impl<'a> Hitresult<'a> {
 			}
 			out / samples as f32
 		}
+
 		pub fn measure_variance(&self, x: f32, y:f32) -> Color {
 			let max = 8;
 			let mut accum = Color::black();
@@ -599,11 +604,15 @@ impl<'a> Hitresult<'a> {
 									surface
 								}; 
 								//out = out + self.calc_gi(&hit) * hit.node.material.color;
+                                out = out/ 2.0;
 								out
 
 							}
 			}
 		}
+
+        // returns the brdf color
+        // no reflection, refraction, gi
 		pub fn calc_color(&self, hit:&Hitresult, origin:Vector) -> Color {
 			if let BRDF::Constant = hit.node.material.diffuse {return hit.node.material.color}
 			let mut out = Color::black();
@@ -622,6 +631,8 @@ impl<'a> Hitresult<'a> {
 				}
 			return out;
 		}
+
+
 		pub fn calc_fresnel(&self, pos:Vector, origin:Vector, n:Vector, power:f32) -> f32 {
 			let scale = 1.0;
 			let bias = 0.0;
@@ -630,6 +641,7 @@ impl<'a> Hitresult<'a> {
 			let mi = i_dot_n.min(1.);
 			mi.max(0.)
 		}
+
 		pub fn check_shadow(&self, pos:Vector, light:&Light) -> bool {
 			let ray = Ray::from_target(light.pos, pos);
 			let hit = self.cast_ray(&ray);
@@ -674,7 +686,7 @@ impl<'a> Hitresult<'a> {
 			let ray = Ray::biased_from_direction(hit.pos, reflect_vec);
 			self.cast_ray(&ray)
 		}
-		pub fn render(&mut self, x: i32, y: i32) -> (u8,u8,u8) {
+		pub fn render(&self, x: i32, y: i32) -> (u8,u8,u8) {
 			let r = self.ray_from_pixel(x as f32,y as f32);
 			self.cast_primary_ray(&r).to_0_255()
 		}

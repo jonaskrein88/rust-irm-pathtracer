@@ -168,6 +168,14 @@ impl Mul<f32> for Vector {
         Vector::new(self.x * v, self.y * v, self.z * v)
     } 
 }
+
+impl Div<f32> for Vector {
+    type Output = Vector;
+    fn div(self, v:f32) -> Vector {
+        Vector::new(self.x / v, self.y / v, self.z / v)
+    } 
+}
+
 impl fmt::Debug for Vector {
 fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "v: {0:.2}, {1:.2}, {2:.2}",  self.x, self.y, self.z)

@@ -16,10 +16,11 @@ pub struct Camera {
 	}
 	impl Camera{
 		pub fn new() -> Camera {
-			let pos = Vector::empty();
+			let mut pos = Vector::empty();
+            pos.z = 20.0;
 			let up = Vector::new(0.,1.,0.);
 			let dir = Vector::new(0.,0.,-1.);
-			let focal = 80f32;
+			let focal = 0.2f32;
 			Camera{pos:pos, up:up, dir:dir, focal:focal,sensor:0.36, ratio:1.0} 
 		}
 
