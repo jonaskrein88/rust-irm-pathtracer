@@ -18,8 +18,11 @@ pub struct Camera {
 		pub fn new() -> Camera {
 			let mut pos = Vector::empty();
             pos.z = 20.0;
-			let up = Vector::new(0.,1.,0.);
-			let dir = Vector::new(0.,0.,-1.);
+            pos.y = 10.0;
+			let mut up = Vector::new(0.,1.,0.);
+			let mut dir = Vector::new(0.,0.,-1.);
+            up.rotate_x(0.1);
+            dir.rotate_x(0.1);
 			let focal = 0.2f32;
 			Camera{pos:pos, up:up, dir:dir, focal:focal,sensor:0.36, ratio:1.0} 
 		}
@@ -42,6 +45,7 @@ pub struct Camera {
 			m.apply(&mut self.up);
 			self.translate(pos);
 		}
+
 		pub fn walk(&mut self, v:f32) {
 			let mult = 10.1;
 			let f = self.dir.norm();

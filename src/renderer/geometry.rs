@@ -3,7 +3,7 @@ use super::*;
 use std::fs::File;
 use std::str::{SplitWhitespace, Lines};
 use std::io::Read;
-
+use std::time;
 
 
 
@@ -111,10 +111,10 @@ impl Face {
 
 		pub fn add_plane(&mut self) {
 
-			let v0 = Vector::new(50.,-10., 50.);    
-			let v1 = Vector::new(50.,-10., -50.);
-			let v2 = Vector::new(-50.,-10., -50.);
-			let v3 = Vector::new(-50.,-10., 50.);
+			let v0 = Vector::new(50.,0.0, 50.);    
+			let v1 = Vector::new(50.,0.0, -50.);
+			let v2 = Vector::new(-50.,0.0, -50.);
+			let v3 = Vector::new(-50.,0.0, 50.);
 
 			let uv0 = self.add_uv(Vec2::new(0.,0.));
 			let uv1 = self.add_uv(Vec2::new(0.,1.));
@@ -144,7 +144,7 @@ impl Face {
 				uv.x = uv.x * s;
 				uv.y = uv.y * t;
 			}
-			println!("\nuvs{:?}",self.uvs );
+			//println!("\nuvs{:?}",self.uvs );
 		}
 
 		pub fn transform(&mut self, m:Matrix) {
@@ -231,8 +231,11 @@ impl Face {
 				None => None,
 				Some((pos, f, u,v,w)) => {
 					let normal = self.interpolate_normal(f,(u,v,w));
-					let uv = if self.has_uvs {self.interpolate_uv(f,(u,v,w))} else {Vec2::new(0.,0.)};
-					let tangent = if self.has_uvs {self.interpolate_tangent(f,(u,v,w))} else {Vector::new(1.,0.,0.)};
+					//let uv = if self.has_uvs {self.interpolate_uv(f,(u,v,w))} else {Vec2::new(0.,0.)};
+					//let tangent = if self.has_uvs {self.interpolate_tangent(f,(u,v,w))} else {Vector::new(1.,0.,0.)};
+                    let tangent = Vector::new(1.0,0.0,0.0);
+                    let uv = Vec2::new(0.0,0.0);
+
 					Some((pos, normal, uv, tangent))
 				},
 			}
@@ -548,6 +551,7 @@ impl Face {
     }
     pub fn open(filename: &str) -> Polymesh
     {
+        let now = time::Instant::now();
         let mut f = File::open(filename).expect("file not found");
         let mut contents = String::new();
         f.read_to_string(&mut contents)
@@ -564,5 +568,6 @@ impl Face {
 	    m.faces = faces;
 	    m.uvs = uvs;
 	    m.vertices = verts;
+        println!("loading mesh took {} seconds",now.elapsed().as_secs());
 	    m
     }

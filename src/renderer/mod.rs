@@ -21,43 +21,6 @@ const TWO_PI: f32 	= 6.2831832;
 
 
 
-pub struct Framebuffer {
-    pub pixels: Vec<Vec<Color>>,
-    pub width: usize,
-    pub height: usize
-}
-
-impl Framebuffer{
-    pub fn new(x: usize, y:usize) -> Framebuffer 
-    {
-        let mut buff:Vec<Vec<Color>> = Vec::with_capacity(x);
-        for _ in 0..x {
-            let mut col: Vec<Color> = Vec::with_capacity(y);
-            for _ in 0..y {col.push(Color::black());}
-            buff.push(col);
-        }
-        Framebuffer{pixels:buff,width:x, height:y}
-    }
-    pub fn clear(&mut self) {
-        for i in 0..self.pixels.len() {
-            for j in 0..self.pixels[i].len() {
-                self.pixels[i][j] = Color::black();
-            }
-        }
-    }
-    pub fn get(&self,x:usize, y:usize) -> Color {
-        self.pixels[x][y]
-    }
-    pub fn set(&mut self, x:usize, y:usize, value:Color) {
-        self.pixels[x][y] = value;
-    }
-}
-
-
-
-
-
-
 
 
 
@@ -73,7 +36,6 @@ pub struct Settings {
 		gi_depth: i32,
 		gi_on: bool,
 		reflections_on: bool,
-		surface_on :bool,
 	}
 	impl Settings {
 		fn new() -> Settings {
@@ -83,20 +45,15 @@ pub struct Settings {
 				render_alpha: false,
 				render_normals: false,
 				render_uv:false,
-				gi_method_primary: GiMethod::IrradianceMap,
+				gi_method_primary: GiMethod::BruteForce,
 				gi_method_secondary: GiMethod::IrradianceMap,
 				gi_primary_ray_count: 10,
 				gi_depth: 3,
 				gi_on: true,
 				reflections_on: true,
-				surface_on :true,
-
 			}
 		}
 	}
-
-
-
 
 
 
@@ -105,9 +62,6 @@ pub struct Settings {
 		IrradianceMap,
 		LightCache,
 	}
-
-
-
 
 
 
@@ -196,7 +150,6 @@ impl<'a> Hitresult<'a> {
 		nodes: Vec<Geo>,
 		lights: Vec<Light>,
 		image_size: (usize,usize),
-		frame:Framebuffer,
 		settings:Settings,
 		light_cache:Lightcache,
 		irradiance_map: IRClass,
@@ -212,7 +165,6 @@ impl<'a> Hitresult<'a> {
 				nodes: nodes, 
 				lights:lights, 
 				image_size:(x,y),
-				frame:Framebuffer::new(x,y),
 				settings: Settings::new(),
 				light_cache:Lightcache::new(),
 				irradiance_map: IRClass::new(),
@@ -224,7 +176,6 @@ impl<'a> Hitresult<'a> {
 			g.prepass();
 			self.nodes.push(g);
 		}
-		pub fn clear_buffer(&mut self) { self.frame.clear();}
 
 		pub fn init(&mut self) {
 
@@ -267,12 +218,13 @@ impl<'a> Hitresult<'a> {
 
 			//let nmap = Texture::open("C:/Users/Jo/Desktop/normal.jpg");
 			//let tex = Texture::open("C:/Users/Jo/Desktop/download.png");
-			let mut mesh = open("C:/Users/j.krein/Desktop/box.obj");
-			//let mut mesh = open("C:/Users/Jo/Desktop/tea_pot.obj");
+			//let mut mesh = open("C:/Users/j.krein/Desktop/box.obj");
+			let mut mesh = open("C:/Users/j.krein/Desktop/teapot.obj");
 			//let mut mesh = open("C:/Users/Jo/Desktop/box.obj");
-			mesh.scale(0.1);
+			mesh.scale(0.5);
 			//mesh.translate(Vector::new(0.,0.,-5.));
 			let mut mg = Geo::create_mesh(mesh);
+            mg.material.color = Color::white();
 			//mg.material.texmap_diffuse = Some(tex);
 			//mg.material.texmap_normal = Some(nmap);
 			//mg.material.reflection = true;
@@ -300,13 +252,14 @@ impl<'a> Hitresult<'a> {
 			let mut l = Light::new();
 			l.pos.y = 5.;
 			l.pos.x = 5.;
-			l.color = Color::new(0.5,0.5,1.0);
+			l.color = Color::new(0.75,0.75,1.0);
 			self.lights.push(l);
 
 			let mut l2 = Light::new();
 			l2.pos.y = 5.;
 			l2.pos.x = -5.;
-			l2.color = Color::new(1.,1.,0.5);
+			l2.pos.z = 5.;
+			l2.color = Color::new(1.,1.,0.75);
 			self.lights.push(l2);
 
 
@@ -587,6 +540,7 @@ impl<'a> Hitresult<'a> {
 								if self.settings.render_alpha {return Color::white();} 		// only alpha
 								if self.settings.render_normals {return hit.normal.normal_to_color();}
 								if self.settings.render_uv {return hit.uv.to_color();}
+                                return hit.normal.normal_to_color();
 								//return self.ir_render_samples(&hit);
 								//return hit.tangent.normal_to_color();
 								//return hit.normal.normal_to_color();
@@ -603,8 +557,7 @@ impl<'a> Hitresult<'a> {
 								} else{
 									surface
 								}; 
-								//out = out + self.calc_gi(&hit) * hit.node.material.color;
-                                out = out/ 2.0;
+						        out = out + self.calc_gi(&hit) * hit.node.material.color; out = out/ 2.0;
 								out
 
 							}
@@ -718,13 +671,13 @@ impl<'a> Hitresult<'a> {
 							},
 							GiMethod::LightCache 		=> self.light_cache_read(new_hit.pos),	
 						};
-						//let dist = new_hit.pos.dist(hit.pos);
-						//let falloff = 1. / (dist * 0.1).max(1.);
+						let dist = new_hit.pos.dist(hit.pos);
+						let falloff = 1. / (dist * 0.1).max(1.);
 						out_color = out_color + color;
 					}
 				}
 			}
-			out_color * hit.node.material.color / passes as f32 * 0.6
+			out_color * hit.node.material.color / passes as f32
 		}
 		pub fn gi_brute_force2(&self, hit:&Hitresult) -> Color {
 			let mut accum = Color::black();

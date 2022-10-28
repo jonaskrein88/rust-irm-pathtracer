@@ -140,31 +140,36 @@ impl Material {
     }
     pub fn calc_diffuse(&self, pos: Vector, mut normal: Vector, tan:Vector, light: &Light, origin:Vector, uv:Vec2) -> Color {
 
-        if let Some(ref map) = self.texmap_normal { 	// darboux frame
-            let bitan = tan.cross(normal);
-            let space = Matrix::from_vectors(normal, tan, bitan);
-            let v = map.get_pixel(uv.x, uv.y).to_vector();
-            normal = v.transform(&space);
-        }
-        let amount = match self.diffuse {
-            BRDF::Lambert 	=> Material::calc_lambert(self,pos, normal, light),
-            BRDF::OrenNayar => Material::calc_oren_nayar(self,pos, normal, light, origin),
-            BRDF::Constant	=> 1.0,
-            _ 				=> 0.0,
-        };
-        let color = match self.texmap_diffuse {
-                Some( ref tex) 	=> tex.get_pixel(uv.x,uv.y),
-                _ 				=> self.color,
-        };
+//        if let Some(ref map) = self.texmap_normal { 	// darboux frame
+//            let bitan = tan.cross(normal);
+//            let space = Matrix::from_vectors(normal, tan, bitan);
+//            let v = map.get_pixel(uv.x, uv.y).to_vector();
+//            normal = v.transform(&space);
+//        }
+//        let amount = match self.diffuse {
+//            BRDF::Lambert 	=> Material::calc_lambert(self,pos, normal, light),
+//            BRDF::OrenNayar => Material::calc_oren_nayar(self,pos, normal, light, origin),
+//            BRDF::Constant	=> 1.0,
+//            _ 				=> 0.0,
+//        };
+        let amount = Material::calc_lambert(self,pos, normal, light);
+//
+//        let color = match self.texmap_diffuse {
+//                Some( ref tex) 	=> tex.get_pixel(uv.x,uv.y),
+//                _ 				=> self.color,
+//        };
+        let color = self.color;
         color * amount * light.color
     }
     pub fn calc_specular(&self, pos:Vector, normal:Vector, light: &Light, origin:Vector) -> Color {
         if !self.reflection {return Color::black();}
-        let spec = match self.spec {
-            BRDF::Blinn 	=> Material::calc_blinn(&self,pos, normal, light, origin) * light.calc_falloff(pos),
-            BRDF::Phong 	=> Material::calc_phong(&self,pos, normal, light, origin) * light.calc_falloff(pos),
-            _ 				=> 0.0,
-        };
+        let spec = Material::calc_blinn(&self,pos, normal, light, origin) * light.calc_falloff(pos);
+
+//        let spec = match self.spec {
+//            BRDF::Blinn 	=> Material::calc_blinn(&self,pos, normal, light, origin) * light.calc_falloff(pos),
+//            BRDF::Phong 	=> Material::calc_phong(&self,pos, normal, light, origin) * light.calc_falloff(pos),
+//            _ 				=> 0.0,
+//        };
         light.color * spec
     }
 }
