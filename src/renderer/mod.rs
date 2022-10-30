@@ -179,92 +179,59 @@ impl<'a> Hitresult<'a> {
 
 		pub fn init(&mut self) {
 
+            self.camera.pos.z = -40.0;
+            self.camera.pos.y = 20.0;
+
 			let mut s2 = Geo::new();
 			s2.pos.z = 0.0;
 			s2.pos.x = 10.;
-			s2.pos.y = -5.;
+			s2.pos.y = 5.;
 			s2.shape = Shape::Sphere(12.);
-			s2.material.spec = BRDF::Phong;
 			//s2.material.refraction = true;
 			s2.material.reflection = true;
-			//s2.material.diffuse = BRDF::None;
+            s2.material.color = Color::red();
+			s2.material.diffuse = BRDF::None;
+            s2.material.ior = 0.1;
 			self.add(s2);
 
-			let mut s2 = Geo::new();
-			s2.pos.z = -15.;
-			s2.pos.x = 2.;
-			s2.pos.y = -5.;
-			s2.shape = Shape::Sphere(8.);
-			s2.material.spec = BRDF::Phong;
-			s2.material.reflection = true;
-			//s2.material.diffuse = BRDF::None;
-			//self.add(s2);
-
-			let mut s = Geo::create_sphere(Vector::new(-2.,-8.,-20.));
-			s.material.color = Color::red();
-			s.set_size(3.);
-			//self.add(s);
 
 
+			let mut stage_mesh = open("C:/Users/j.krein/Desktop/stage.obj");
+			let mut stage_geo = Geo::create_mesh(stage_mesh);
+			stage_geo.material.specular = BRDF::None;
+            self.add(stage_geo);
 
-			let mut s1 = Geo::create_sphere(Vector::new(-7.,-7.,-20.));
-			//s1.material.reflection = true;
-			s1.material.ior = 0.1;
-			s1.material.glossiness = 0.7;
-			//s1.material.color = Color::black();
-			//s1.material = Material::new_light_material();
-			s1.set_size(4.);
-			//self.add(s1);
-
-			//let nmap = Texture::open("C:/Users/Jo/Desktop/normal.jpg");
-			//let tex = Texture::open("C:/Users/Jo/Desktop/download.png");
-			//let mut mesh = open("C:/Users/j.krein/Desktop/box.obj");
 			let mut mesh = open("C:/Users/j.krein/Desktop/teapot.obj");
 			//let mut mesh = open("C:/Users/Jo/Desktop/box.obj");
 			mesh.scale(0.5);
-			//mesh.translate(Vector::new(0.,0.,-5.));
 			let mut mg = Geo::create_mesh(mesh);
             mg.material.color = Color::white();
+            mg.material.specular = BRDF::None;
 			//mg.material.texmap_diffuse = Some(tex);
 			//mg.material.texmap_normal = Some(nmap);
 			//mg.material.reflection = true;
 			self.add(mg);
 
 
-			//let tex2 = Texture::open("C:/Users/Jo/Desktop/uv.jpg");
-			let mut floor = Polymesh::new();
-			floor.add_plane();
-			floor.transform_uvs(5.,5.);
-			let g = Geo::create_mesh(floor);
-			//g.material.texmap_diffuse = Some(tex2);
-			self.add(g);
-
-			let mut wall = Polymesh::new();
-			wall.add_plane();
-			wall.transform_uvs(5.,5.);
-			wall.transform(Matrix::rotate_x(90.));
-			wall.translate(Vector::new(0.,0.,-30.));
-			let w = Geo::create_mesh(wall);
-			//g.material.texmap_diffuse = Some(tex2);
-			self.add(w);
-
-
 			let mut l = Light::new();
 			l.pos.y = 5.;
 			l.pos.x = 5.;
-			l.color = Color::new(0.75,0.75,1.0);
+			l.pos.z = -35.;
+			l.color = Color::new(0.85,0.85,1.0);
+            l.color =  l.color * 5.0;
 			self.lights.push(l);
 
 			let mut l2 = Light::new();
 			l2.pos.y = 5.;
 			l2.pos.x = -5.;
-			l2.pos.z = 5.;
-			l2.color = Color::new(1.,1.,0.75);
-			self.lights.push(l2);
-
+			l2.pos.z = -45.;
+			l2.color = Color::new(1.,1.,1.);
+            l2.color =  l2.color * 3.0;
+			//self.lights.push(l2);
 
             println!("starting IR generation");
-			//self.create_ir();
+			self.create_ir();
+            
             println!("Init complete");
 		}
 		pub fn reads_gi(&self, m:&Material) -> bool {
@@ -337,7 +304,7 @@ impl<'a> Hitresult<'a> {
 					match ir.check_sample(&hit) {
 						Some(_) => (),
 						None =>  {
-							let mut out = self.approximate_color(&hit, self.camera.pos);
+							let mut out = self.approximate_color(&hit, self.camera.pos, true);
 							if self.reads_gi(&hit.node.material) {out += self.ir_secondaray(&hit, &mut ir, 2);}
 							ir.add(hit.pos, out, hit.normal);
 							i += 1;
@@ -357,7 +324,7 @@ impl<'a> Hitresult<'a> {
 					let c = match ir.check_sample(&new_hit) {
 						Some(col) => col,
 						None =>  {
-							let mut surface = self.approximate_color(&new_hit, self.camera.pos);
+							let mut surface = self.approximate_color(&new_hit, self.camera.pos,true);
 							if level > 0 && self.reads_gi(&new_hit.node.material) {
 								let gi = self.ir_secondaray(&new_hit, ir, level-1) * hit.node.material.color;
 								surface = surface + gi;
@@ -415,11 +382,11 @@ impl<'a> Hitresult<'a> {
 				let dir = Vector::calc_refract_vector(i, hit.normal, 1.3);
 				let ray = Ray::biased_from_direction(hit.pos, dir);
 				if let Some(new_hit) = r.cast_ray(&ray) {
-					if level > 2 {return r.approximate_color(&new_hit, hit.pos);}
+					if level > 2 {return r.approximate_color(&new_hit, hit.pos,false);}
 					else if new_hit.node.material.refraction {
 						return calc_refraction_secondary(r, &new_hit, hit.pos, level+1)
 					}
-					else {return r.approximate_color(&new_hit, hit.pos) + r.calc_gi(&new_hit);}
+					else {return r.approximate_color(&new_hit, hit.pos,false) + r.calc_gi(&new_hit);}
 				}
 				r.settings.environment
 			}
@@ -455,8 +422,8 @@ impl<'a> Hitresult<'a> {
 		}
 
 		pub fn super_sample_bokeh(&self, x: f32, y:f32) -> Color {
-			let samples = 20;
-			let focal_dist = 10.0;
+			let sample_count = 8;
+			let focal_dist = 40.0;
 			let mut out = Color::black();
 			let r = 0.2;
 
@@ -470,9 +437,9 @@ impl<'a> Hitresult<'a> {
 			let focal_point = self.camera.pos + old_dir * focal_dist;
 
 
-			for i in 0..samples {
-				let u = (i as f32 * TWO_PI / samples as f32 ).cos() * r;
-				let v = (i as f32 * TWO_PI / samples as f32 ).sin() * r;
+			for i in 0..sample_count {
+				let u = (i as f32 * TWO_PI / sample_count as f32 ).cos() * r;
+				let v = (i as f32 * TWO_PI / sample_count as f32 ).sin() * r;
 
 				let origin = self.camera.pos + right * u + up * v;
 
@@ -481,9 +448,11 @@ impl<'a> Hitresult<'a> {
 
 				out += self.cast_primary_ray(&ray);
 			}
-			out / samples as f32
+			out / sample_count as f32
 		}
+       
 
+        // render pass for debugging???
 		pub fn measure_variance(&self, x: f32, y:f32) -> Color {
 			let max = 8;
 			let mut accum = Color::black();
@@ -518,12 +487,14 @@ impl<'a> Hitresult<'a> {
 			}
 			best_hit
 		}
-		pub fn approximate_color(&self, hit:&Hitresult, origin:Vector) -> Color {
-			if hit.node.material.reflection {
+		pub fn approximate_color(&self, hit:&Hitresult, origin:Vector, reflection: bool) -> Color 
+        {
+			if reflection && hit.node.material.reflection 
+            {
 				let fresnel = self.calc_fresnel(hit.pos, self.camera.pos,hit.normal, hit.node.material.ior);
 				let hit_opt = self.cast_reflection_ray(origin, hit);
 				let reflect = match hit_opt {
-					Some(new_hit) => {self.calc_color(&new_hit, hit.pos)},
+					Some(new_hit) => {self.approximate_color(&new_hit, hit.pos, false)},
 					None 		=> {self.settings.environment}
 				};
 				let surface = self.calc_color(&hit,self.camera.pos) * (1. - fresnel);
@@ -531,6 +502,7 @@ impl<'a> Hitresult<'a> {
 			}
 			self.calc_color(hit, origin)
 		}
+
 		pub fn cast_primary_ray(&self, ray:&Ray) -> Color {
 			let hit_result = self.cast_ray(ray);
 			match hit_result {
@@ -540,7 +512,7 @@ impl<'a> Hitresult<'a> {
 								if self.settings.render_alpha {return Color::white();} 		// only alpha
 								if self.settings.render_normals {return hit.normal.normal_to_color();}
 								if self.settings.render_uv {return hit.uv.to_color();}
-                                return hit.normal.normal_to_color();
+                                //return hit.normal.normal_to_color();
 								//return self.ir_render_samples(&hit);
 								//return hit.tangent.normal_to_color();
 								//return hit.normal.normal_to_color();
@@ -567,19 +539,14 @@ impl<'a> Hitresult<'a> {
         // returns the brdf color
         // no reflection, refraction, gi
 		pub fn calc_color(&self, hit:&Hitresult, origin:Vector) -> Color {
-			if let BRDF::Constant = hit.node.material.diffuse {return hit.node.material.color}
+			//if let BRDF::Constant = hit.node.material.diffuse {return hit.node.material.color}
 			let mut out = Color::black();
 				for light in &self.lights
 				{
 					if self.settings.shadows && self.check_shadow(hit.pos, &light) {continue;}
-					let diffuse = {
-						if hit.node.material.color == {Color::black()} {Color::black()}
-						else {hit.node.material.calc_diffuse(hit.pos, hit.normal, hit.tangent, &light, origin, hit.uv)}
-					};
-					let spec = { 
-						if hit.node.material.reflection_color == Color::black() {Color::black()}
-						else {hit.node.material.calc_specular(hit.pos, hit.normal, &light, origin)}
-					};
+					let diffuse = hit.node.material.calc_diffuse(hit.pos, hit.normal, hit.tangent, &light, origin, hit.uv);
+					let spec =    hit.node.material.calc_specular(hit.pos, hit.normal, &light, origin);
+
 					out = out + diffuse + spec;
 				}
 			return out;
@@ -639,21 +606,23 @@ impl<'a> Hitresult<'a> {
 			let ray = Ray::biased_from_direction(hit.pos, reflect_vec);
 			self.cast_ray(&ray)
 		}
+
 		pub fn render(&self, x: i32, y: i32) -> (u8,u8,u8) {
-			let r = self.ray_from_pixel(x as f32,y as f32);
-			self.cast_primary_ray(&r).to_0_255()
+			//let r = self.ray_from_pixel(x as f32,y as f32);
+			//self.cast_primary_ray(&r).to_0_255()
+            self.super_sample_bokeh(x as f32,y as f32).to_0_255()
 		}
 
 		pub fn calc_gi(&self, hit:&Hitresult) -> Color {
 			if !self.reads_gi(&hit.node.material) {return Color::black()}
 			match self.settings.gi_method_primary {
-				GiMethod::BruteForce 		=> self.gi_brute_force(hit, 0),
+				GiMethod::BruteForce 		=> self.gi_brute_force2(hit, 0),
 				GiMethod::IrradianceMap 	=> self.ir_read(hit.pos),
 				GiMethod::LightCache 		=> self.light_cache_read(hit.pos),
 			}
 		}
 		pub fn gi_brute_force(&self, hit:&Hitresult, level:i32) -> Color { 
-			let passes = (24. / 2.0f32.powi(level)) as usize;
+			let passes = (32. / 2.0f32.powi(level)) as usize;
 			let mut out_color = Color::black();
 			for _ in 0..passes {
 				if let Some(new_hit) = self.cast_random_hemispherical_ray(hit.pos, hit.normal) {
@@ -662,7 +631,7 @@ impl<'a> Hitresult<'a> {
 						{
 							GiMethod::IrradianceMap 	=> self.ir_read(new_hit.pos),
 							GiMethod::BruteForce 		=> {
-								let mut color = self.approximate_color(&new_hit, hit.pos);
+								let mut color = self.approximate_color(&new_hit, hit.pos,true);
 								if level < 1 { 
 									let secondary_gi = self.gi_brute_force(&new_hit, level+1);
 									color += secondary_gi * hit.node.material.color;                // this was unused !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -679,7 +648,7 @@ impl<'a> Hitresult<'a> {
 			}
 			out_color * hit.node.material.color / passes as f32
 		}
-		pub fn gi_brute_force2(&self, hit:&Hitresult) -> Color {
+		pub fn gi_brute_force2(&self, hit:&Hitresult, _:i32) -> Color {
 			let mut accum = Color::black();
 			let mut samples:Vec<Color> = Vec::new();
 			let min = 4;

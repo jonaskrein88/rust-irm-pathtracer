@@ -67,7 +67,7 @@ pub enum BRDF {
 pub struct Material {
     pub color: Color,
     pub diffuse: BRDF,
-    pub spec: BRDF,
+    pub specular: BRDF,
     pub reflection_color: Color,
     pub reflection: bool,
     pub refraction:bool,
@@ -80,8 +80,8 @@ pub struct Material {
 impl Material {
     pub fn new() -> Material { Material {
         color:Color::light_grey(), 
-        diffuse:BRDF::OrenNayar, 
-        spec:BRDF::Blinn, 
+        diffuse:BRDF::Lambert, 
+        specular:BRDF::None, 
         reflection:false,
         refraction:false,
         reflection_color: Color::white(),
@@ -95,7 +95,7 @@ impl Material {
     pub fn new_light_material() -> Material {
         let mut m = Material::new();
         m.diffuse = BRDF::Constant;
-        m.spec = BRDF::None;
+        m.specular = BRDF::None;
         m.reflection = false;
         m
     }
@@ -152,7 +152,9 @@ impl Material {
 //            BRDF::Constant	=> 1.0,
 //            _ 				=> 0.0,
 //        };
-        let amount = Material::calc_lambert(self,pos, normal, light);
+        if let BRDF::None = self.diffuse {return Color::black()}
+        let amount = Material::calc_lambert(self,pos, normal, light)* light.calc_falloff(pos);
+
 //
 //        let color = match self.texmap_diffuse {
 //                Some( ref tex) 	=> tex.get_pixel(uv.x,uv.y),
@@ -161,11 +163,14 @@ impl Material {
         let color = self.color;
         color * amount * light.color
     }
+
+
     pub fn calc_specular(&self, pos:Vector, normal:Vector, light: &Light, origin:Vector) -> Color {
-        if !self.reflection {return Color::black();}
+        if !self.reflection {return Color::black()}
+        if let BRDF::None = self.specular {return Color::black();}
         let spec = Material::calc_blinn(&self,pos, normal, light, origin) * light.calc_falloff(pos);
 
-//        let spec = match self.spec {
+//        let spec = match self.specular {
 //            BRDF::Blinn 	=> Material::calc_blinn(&self,pos, normal, light, origin) * light.calc_falloff(pos),
 //            BRDF::Phong 	=> Material::calc_phong(&self,pos, normal, light, origin) * light.calc_falloff(pos),
 //            _ 				=> 0.0,

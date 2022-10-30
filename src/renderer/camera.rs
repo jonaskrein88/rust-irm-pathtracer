@@ -17,13 +17,13 @@ pub struct Camera {
 	impl Camera{
 		pub fn new() -> Camera {
 			let mut pos = Vector::empty();
-            pos.z = 20.0;
-            pos.y = 10.0;
+            pos.z = -40.0;
+            pos.y = 20.0;
 			let mut up = Vector::new(0.,1.,0.);
-			let mut dir = Vector::new(0.,0.,-1.);
-            up.rotate_x(0.1);
-            dir.rotate_x(0.1);
-			let focal = 0.2f32;
+			let mut dir = Vector::new(0.,0.,1.);
+            up.rotate_x(0.2);
+            dir.rotate_x(0.2);
+			let focal = 0.4f32;
 			Camera{pos:pos, up:up, dir:dir, focal:focal,sensor:0.36, ratio:1.0} 
 		}
 

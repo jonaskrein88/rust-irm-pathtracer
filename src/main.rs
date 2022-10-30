@@ -4,7 +4,6 @@ use renderer::color::Color;
 use std::sync::{Mutex,Arc};
 use std::{time,thread};
 use std::sync::mpsc;
-
 use rand::Rng;
 
 
@@ -98,7 +97,7 @@ pub mod display
 
 
 
-const BUCKETSIZE: u16 = 16;
+const BUCKETSIZE: u16 = 32;
 
 pub fn precalculate_bucket_positions( width:usize, height:usize) -> Vec<(u16,u16)> {
     let mut positions = vec!();
@@ -116,8 +115,10 @@ struct BucketRenderer
     width: usize,
     height: usize,
     bucket_positions : Vec<(u16,u16)>,
+    completion_counter : usize,
     color_buffer: image::RgbaImage,
-    render_core : Renderer
+    render_core : Renderer,
+
 }
 impl BucketRenderer 
 {
@@ -125,30 +126,29 @@ impl BucketRenderer
         let color_buffer = image::RgbaImage::new(width.try_into().unwrap(),height.try_into().unwrap());
         let bucket_positions = precalculate_bucket_positions(width,height); 
         let render_core = Renderer::new(width, height);
-        BucketRenderer{width, height, bucket_positions, color_buffer, render_core}
+        let completion_counter = 0usize;
+        BucketRenderer{width, height, bucket_positions, color_buffer, completion_counter, render_core}
     }
-    fn get_frame(){}
-/*
-    fn render(&mut self) {
-        for _ in 0..20 {
-            let x:i32 = rand::thread_rng().gen_range(0..self.width) as i32;
-            let y:i32 = rand::thread_rng().gen_range(0..self.height) as i32;
-            let pixel = self.render_core.render(x as i32,y as i32);
-            self.color_buffer.put_pixel(x as u32,y as u32,image::Rgba([pixel.0, pixel.1,pixel.2,255]));
-        }
-    }
-    */
-    fn render_buckets(self) -> Arc<Mutex<image::RgbaImage>>{
-        let img =  Arc::new(Mutex::new(self.color_buffer));
-        let re = Arc::new(self.render_core);
+
+    // spawns the render buckets
+    // retuns a receiver to fetch the buffer
+    fn render_buckets(self) -> std::sync::mpsc::Receiver<image::RgbaImage>
+    {
+        let img =       Arc::new(Mutex::new(self.color_buffer));
+        let counter =   Arc::new(Mutex::new(self.completion_counter));
+        let re =        Arc::new(self.render_core);
+        let (tx,rx) =   mpsc::channel();
+        let num_buckets = self.bucket_positions.len();
 
         for pos in self.bucket_positions {
             let _re = Arc::clone(&re);
             let _img = Arc::clone(&img);
+            let _counter = Arc::clone(&counter);
+            let _tx = tx.clone();
 
             thread::spawn(move || 
             {
-                let mut bucket_buffer = [[(0u8,0u8,0u8);16];16];
+                let mut bucket = [[(0u8,0u8,0u8);BUCKETSIZE as usize];BUCKETSIZE as usize];
                 for u in 0..BUCKETSIZE
                 {
                     for v in 0..BUCKETSIZE
@@ -158,11 +158,14 @@ impl BucketRenderer
                         if u32::from(x) < WIDTH && u32::from(y) < HEIGHT
                         {
                             let pixel = _re.render(x.into(),y.into());
-                            bucket_buffer[u as usize][v as usize] = pixel;
+                            bucket[u as usize][v as usize] = pixel;
                         }
                     }
                 }
                 let mut imgRef = _img.lock().unwrap();
+                let mut counter_ref = _counter.lock().unwrap();
+                
+                // add the pixels from the bucket to the image
                 for u in 0..BUCKETSIZE
                 {
                     for v in 0..BUCKETSIZE
@@ -171,16 +174,27 @@ impl BucketRenderer
                         let y = pos.1 + v;
                         if u32::from(x) < WIDTH && u32::from(y) < HEIGHT
                         {
-                            let pixel = bucket_buffer[u as usize][v as usize];
+                            let pixel = bucket[u as usize][v as usize];
                             imgRef.put_pixel(x as u32, y as u32, image::Rgba([pixel.0, pixel.1,pixel.2,255]));
                         }
                     }
                 }
-                //thread::sleep(time::Duration::from_secs(2));
-            });
+                // increase to completion counter
+                *counter_ref += 1usize;
 
+                // was this the last bucket
+                if *counter_ref == num_buckets {
+                    println!("done");
+                    imgRef.save("C:/Users/j.krein/Desktop/test/test.jpg");
+                }
+
+                _tx.send(imgRef.clone());
+            });
+            
+            // end of thread
         }
-        img
+        println!("Bucket threads spawned");
+        rx
     }
 }
 
@@ -190,36 +204,34 @@ impl BucketRenderer
 
 
     pub fn run() {
-        //let frame_buffer = image::ImageBuffer::from_pixel(WIDTH, HEIGHT, image::Rgba([0,0,0,255]));
-        //let frame_buffer = render_frame_lines();
         let bucketrenderer = BucketRenderer::new(WIDTH.try_into().unwrap(),HEIGHT.try_into().unwrap());
         let img = bucketrenderer.render_buckets();
-
+        println!("creating window");
         let mut window: piston_window::PistonWindow =
         piston_window::WindowSettings::new("Raytracer", [WIDTH, HEIGHT])
             .exit_on_esc(true)
             .build()
             .unwrap_or_else(|_e| { panic!("Could not create window!")});
 
-
         //window.set_lazy(true);
-
+        println!("starting loop");
         while let Some(e) = window.next() {
-                let _img = img.lock().unwrap(); 
-                let tex = piston_window::Texture::from_image(
-                    &mut window.create_texture_context(),
-                    &_img,
-                    &piston_window::TextureSettings::new())
-                    .unwrap();
+            //println!("waiting for image");
+                if let Ok(_img) = img.recv()
+                {
+                    let tex = piston_window::Texture::from_image(
+                        &mut window.create_texture_context(),
+                        &_img,
+                        &piston_window::TextureSettings::new())
+                        .unwrap();
 
-                window.draw_2d(&e, |c, g, _| {
-
-                piston_window::clear([1.0; 4], g);
-                piston_window::image(&tex, c.transform, g)
-            });
+                    window.draw_2d(&e, |c, g, _| {
+                        piston_window::clear([1.0; 4], g);
+                        piston_window::image(&tex, c.transform, g)
+                    });
+                }
         }
     }
-
 
 }
 

@@ -258,6 +258,7 @@ impl Face {
 			let v = ray.dir.dot(qvec) * inv_det;
 			if v < 0. || u + v > 1. { return None;}
 			let t = v0v2.dot(qvec) * inv_det;
+            if t < 0.0 {return None;}
 			let hit_pos = ray.origin + ray.dir.norm() * t;
 			let w = 1. - u - v;
 			Some((hit_pos, f, u,v,w))
