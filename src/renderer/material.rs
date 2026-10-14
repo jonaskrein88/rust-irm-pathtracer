@@ -3,6 +3,7 @@ extern crate image;
 
 use self::image::{Pixel,GenericImage};
 use crate::renderer::material::image::GenericImageView;
+use exr::*;
 use super::*;
 
 
@@ -11,35 +12,85 @@ use super::*;
 
 pub struct Texture {
     pixels: Vec<Vec<Color>>,
-    width: u32,
-    height: u32,
+    width: usize,
+    height: usize,
 }
 
-impl Texture {
+impl Texture 
+{
     pub fn open(filename: &str) -> Texture {
         let img = image::open(filename).unwrap(); 
         Texture::from_image(img)
     }
-    pub fn from_image(img:image::DynamicImage) -> Texture {
+
+    fn new(pixels: Vec<Vec<Color>>) -> Texture {
+        let height = pixels.len();
+        let width = pixels[0].len(); 
+        Texture{pixels,width,height}
+    }
+
+    fn from_image(img:image::DynamicImage) -> Texture {
         let (width, height) = img.dimensions();
         let mut out: Vec<Vec<Color>> = Vec::new();
 
-        for i in 0..width {
+        for i in 0..height {
             let mut col:Vec<Color> = Vec::new();
-            for j in 0..height {
-                let p = img.get_pixel(i,j);
+            for j in 0..width {
+                let p = img.get_pixel(j,i);
                 let c = p.channels();
                 let (r,g,b) = (c[0], c[1], c[2]);
                 col.push(Color::new_from_255(r,g,b));
             }
             out.push(col);
         }
-        Texture{pixels:out, width:width, height:height}
+        Texture::new(out)
     }
+
+
+
+    pub fn open_exr (file: &str) -> Texture
+    {
+         let mut image = exr::prelude::read_first_rgba_layer_from_file(file,
+                // instantiate your image type with the size of the image in file
+                |resolution, _| {
+                    let default_pixel = [0.0, 0.0, 0.0, 0.0];
+                    let empty_line =  vec![ default_pixel; resolution.width() ];
+                    let empty_image =  vec![ empty_line; resolution.height() ];
+                    empty_image
+                },
+                // transfer the colors from the file to your image type,
+                // requesting all values to be converted to f32 numbers (you can also directly use f16 instead)
+                // and you could also use `Sample` instead of `f32` to keep the original data type from the file
+                |pixel_vector, position, (r, g, b, a): (f32, f32, f32, f32)| {
+                    pixel_vector[position.y()][position.x()] = [r, g, b, a]
+                },
+
+            ).expect("run the `1_write_rgba` example to generate the required file");
+
+         // collect the pixels into a texture struct with colors
+
+         let mut out: Vec<Vec<Color>> = Vec::new();
+         for line in &mut image.layer_data.channel_data.pixels
+         {
+            let mut out_line: Vec<Color> = Vec::new();
+            for [r,g,b,_] in line {
+                out_line.push(Color::new(*r,*g,*b));
+             }
+             out.push(out_line);
+        }
+         Texture::new(out)
+    }
+
     pub fn get_pixel(&self, u:f32, v:f32)-> Color {
-        let x = ((u % 1.0) * self.width as f32) as usize;
-        let y = ((v % 1.0) * self.height as f32) as usize;
-        self.pixels[x][y]
+        let mut x = (u * self.width as f32) as usize;
+        let mut y = (v * self.height as f32) as usize;
+        
+        
+        x = std::cmp::max(x,0);
+        x = std::cmp::min(x,self.width-1);
+        y = std::cmp::max(y,0);
+        y = std::cmp::min(y,self.height-1);
+        self.pixels[y][x]
     }
 }
 
@@ -70,7 +121,7 @@ pub struct Material {
     pub specular: BRDF,
     pub reflection_color: Color,
     pub reflection: bool,
-    pub refraction:bool,
+    pub refraction: bool,
     pub illum: f32,
     pub glossiness: f32,
     pub ior: f32,

@@ -26,13 +26,13 @@ impl Vector
 {	
     pub fn empty() -> Vector { Vector{x: 0., y:0., z:0.}}
 
-    pub fn new(x: f32, y: f32 ,z : f32) -> Vector {Vector{x:x, y:y, z:z}}
+    pub fn new(x: f32, y: f32 ,z : f32) -> Vector {Vector{x, y, z}}
 
     pub fn random() -> Vector {
-        let x = rand::random::<f32>();
-        let y = rand::random::<f32>();
-        let z = rand::random::<f32>();
-        Vector::new(x,y,z)
+        let x = rand::random::<f32>() - 0.5;
+        let y = rand::random::<f32>() - 0.5;
+        let z = rand::random::<f32>() - 0.5;
+        Vector::new(x,y,z).norm() 
     }
     pub fn add(&self, v: Vector) -> Vector{
         Vector{x: self.x + v.x, y: self.y + v.y, z: self.z + v.z}
@@ -50,7 +50,7 @@ impl Vector
         f32::sqrt(self.x * self.x + self.y * self.y + self.z * self.z)
     }
     pub fn dist(self, v:Vector) -> f32 {
-        (self - v).length()
+        self.sub(v).length()
     }
     pub fn norm(&self) -> Vector {
         self.div(self.length())
@@ -115,7 +115,20 @@ impl Vector
         let m = Matrix::from_vector(self);
         p.transform(&m)
     }
-    pub fn random_hemispherical(self) -> Vector { self.random_angle(PI / 2.0) }
+    //pub fn random_hemispherical(self) -> Vector { self.random_angle(PI / 2.0) }
+    pub fn random_hemispherical_2(self) -> Vector 
+    {
+        let m = Matrix::from_vector(self);
+        let mut v = Vector::random();
+        v.z = v.z.abs();
+        v.transform(&m)
+    }
+    pub fn random_hemispherical(self) -> Vector 
+    {
+        let v = Vector::random();
+        if self.dot(v) < 0.0 {return v *-1.0}
+       v
+    }
 
 	pub fn calc_reflect_vector(mut i: Vector, mut n: Vector) -> Vector {
 		i = i.norm();

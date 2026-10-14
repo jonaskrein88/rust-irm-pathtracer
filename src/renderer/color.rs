@@ -60,6 +60,10 @@ impl Color
         let c = *self * 2.;
         Vector::new(c.r - 1., c.g - 1., c.b - 1.)
     }
+    pub fn clamp(&self, v:f32) -> Color {
+        Self::new(self.r.min(v), self.g.min(v), self.b.min(v))
+
+    }
 }
 
 

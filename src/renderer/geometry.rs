@@ -7,9 +7,6 @@ use std::time;
 
 
 
-
-
-
 pub struct Light {
     pub color: Color,
     pub pos: Vector,
@@ -29,28 +26,37 @@ impl Light {
 
 
 
+
+
+
+
 #[derive(Debug)]
 pub struct Face {
     a:usize,
     b:usize,
     c:usize,
+
+	na:usize,
+	nb:usize,
+	nc:usize,
+
     uva:usize,
     uvb:usize,
-    uvc:usize,
+    uvc:usize
 }
-impl Face {
-    fn new(a:usize, b:usize, c:usize) -> Face {
-        Face{a:a, b:b, c:c, uva:0, uvb:0, uvc:0}
-    }
-    fn new_with_uvs(a:usize, b:usize, c:usize, uva:usize, uvb:usize, uvc:usize) -> Face {
-        let mut f = Face::new(a,b,c);
-        f.add_uvs(uva,uvb,uvc);
-        f
-    }
-    fn add_uvs(&mut self, a:usize, b:usize, c:usize) {
-        self.uva = a;
-        self.uvb = b;
-        self.uvc = c;
+
+impl Face
+{
+    pub fn new( 
+		verts:  (usize,usize,usize),
+		normals:(usize,usize,usize),
+		uvs:    (usize,usize,usize)
+	) -> Face {
+        let face = Face{
+			a:verts.0, b:verts.1, c:verts.2,
+			uva:uvs.0, uvb:uvs.1, uvc:uvs.2,
+			na:normals.0, nb:normals.1, nc:normals.2};
+		face
     }
 }
 
@@ -61,31 +67,31 @@ impl Face {
 
 	pub struct Points(Vector, Vector, Vector);
 
-
-	pub struct Polymesh {
-		faces: Vec<Face>,
-		vertices: Vec<Vector>,
-		normals: Vec<Vector>,
-		aabb:(Vector,Vector),
-		has_uvs:bool,
-		uvs: Vec<Vec2>,
-		vnormals: Vec<Vector>,
+	pub struct Polymesh
+	{
+		faces:     Vec<Face>,
+		vertices:  Vec<Vector>,
+		fnormals:  Vec<Vector>,
 		ftangents: Vec<Vector>,
+		aabb:     (Vector,Vector),
+		//has_uvs:   bool, // can go TODO
+		uvs:       Vec<Vec2>,
+		vnormals:  Vec<Vector>,
 		vtangents: Vec<Vector>,
 	}
+
 	impl Polymesh
 	{
 		pub fn new() -> Polymesh {
 			Polymesh { 
 				faces:Vec::new(), 
 				vertices:Vec::new(),
-				normals:Vec::new(),
+				fnormals:Vec::new(),
+				ftangents: Vec::new(),
 				aabb:(Vector::empty(),Vector::empty()),
 				uvs:Vec::new(),
-				vnormals:Vec::new(),
-				has_uvs:false,
-				ftangents: Vec::new(),
 				vtangents: Vec::new(),
+				vnormals:Vec::new(),
 			}
 		}
 		fn pre_calculate_aabb(&mut self) {
@@ -103,14 +109,16 @@ impl Face {
 		}
 		fn prepass(&mut self) {
 			self.pre_calculate_aabb();
-			if self.uvs.len() > 0 {self.has_uvs = true}
-			self.pre_calculate_normals();
-			self.calculate_vertex_normals();
+			//if self.uvs.len() > 0 {self.has_uvs = true}
+			self.pre_calculate_fnormals();
+			//self.calculate_vertex_normals();
 		}
+
+
+		/*
 		pub fn add_face(&mut self, face:Face) {self.faces.push(face);}
 
 		pub fn add_plane(&mut self) {
-
 			let v0 = Vector::new(50.,0.0, 50.);    
 			let v1 = Vector::new(50.,0.0, -50.);
 			let v2 = Vector::new(-50.,0.0, -50.);
@@ -147,19 +155,22 @@ impl Face {
 			//println!("\nuvs{:?}",self.uvs );
 		}
 
+		*/
 		pub fn transform(&mut self, m:Matrix) {
 			for v in &mut self.vertices {
 				*v = v.transform(&m);
 			}
 		}
-
+		/*
 		fn calculate_vertex_normals(&mut self) {
 			// normals
+			
 			for i in 0..self.vertices.len(){
 				let faces = self.faces_from_point(i);
 				let vnormal = self.vnormal_from_fnormals(faces);
 				self.vnormals.push(vnormal);
 			}
+			
 			// tangents
 			if self.ftangents.len() == 0 {return ();}
 			for i in 0..self.vertices.len(){
@@ -172,6 +183,8 @@ impl Face {
 				self.vtangents.push(tangent.norm());
 			}
 		}
+		*/
+		/*
 		fn faces_from_point(&self, v:usize) -> Vec<usize> {
 			let mut out:Vec<usize> = Vec::new();
 			for i in 0..self.faces.len() {
@@ -180,14 +193,18 @@ impl Face {
 			}
 			out
 		}
+		*/
+
+		/*
 		fn vnormal_from_fnormals(&self, face_ids:Vec<usize>) -> Vector {
 			let mut out_normal = Vector::empty();
 			for i in 0..face_ids.len() {
-				let fnormal = self.normals[face_ids[i]];
+				let fnormal = self.fnormals[face_ids[i]];
 				out_normal = out_normal + fnormal;
 			}
 			out_normal.norm()
 		}
+		*/
 		pub fn translate(&mut self, t:Vector) {
 			for v in &mut self.vertices {
 				*v = v.add(t);
@@ -215,7 +232,7 @@ impl Face {
 			let mut best_dist = f32::MAX;
 			let mut best_hit: Option<(Vector,&Face,f32,f32,f32)> = None;
 			for i in 0..self.faces.len() {
-				let hit = self.calculate_hit(ray, &self.faces[i], &self.normals[i]);
+				let hit = self.calculate_hit(ray, &self.faces[i], &self.fnormals[i]);
 				match hit {
 					None => continue,
 					Some((pos,..)) => {
@@ -240,7 +257,9 @@ impl Face {
 				},
 			}
 		}
-		fn calculate_hit<'a>(&self, ray: &Ray, f:&'a Face, n:&Vector) -> Option<(Vector, &'a Face,f32,f32,f32)> {
+		
+		// returns Option ( position, Face, Barycentic)
+		fn calculate_hit<'a>(&self, ray: &Ray, f:&'a Face, n:&Vector) -> Option<(Vector, &'a Face, f32,f32,f32)> {
 			if n.dot(ray.dir) > 0. { return None;}
 			// Möller-Trumbore
 			let p = self.get_positions(f);
@@ -270,11 +289,11 @@ impl Face {
 			//let tangent = if self.has_uvs {self.interpolate_tangent(f,(u,v,w))} else {Vector::new(1.,0.,0.)};
 			//Some((hit_pos, normal, uv, tangent))
 		}
-		fn pre_calculate_normals(&mut self) {
+		fn pre_calculate_fnormals(&mut self) {
 			for f in &self.faces {
 				let points = self.get_positions(f);
 				let n = self.calculate_normal(&points);
-				self.normals.push(n);
+				self.fnormals.push(n);
 				let t = self.calculate_tangent(&f);
 				self.ftangents.push(t);
 			}
@@ -285,10 +304,10 @@ impl Face {
 			e1.cross(e2).norm()
 		}
 		fn interpolate_normal(&self, f:&Face, (u,v,w):(f32,f32,f32)) -> Vector {
-			let c = self.vnormals[f.a];
-			let a = self.vnormals[f.b];
-			let b = self.vnormals[f.c];
-			a * u + b * v + c * w
+			let c = self.vnormals[f.na];
+			let a = self.vnormals[f.nb];
+			let b = self.vnormals[f.nc];
+			(a * u + b * v + c * w).norm()
 		}
 		fn interpolate_tangent(&self, f:&Face, (u,v,w):(f32,f32,f32)) -> Vector {
 			let c = self.vtangents[f.a];
@@ -353,8 +372,10 @@ impl Face {
 		pub shape: Shape,
 	}
 
-	impl Geo {
-		pub fn new() -> Geo{ 
+	impl Geo
+	{
+		pub fn new() -> Geo
+		{ 
 			Geo {
 				id:0,
 				pos:Vector::empty(),
@@ -378,6 +399,11 @@ impl Face {
 		}
 		pub fn set_size(&mut self,s: f32) {
 			self.shape = Shape::Sphere(s);
+		}
+		pub fn translate(mut self, v:Vector) -> Self
+		{
+			self.pos += v;
+			self
 		}
 		pub fn calculate(&self, ray:&Ray) -> Option<Hitresult> {
 			match self.shape {
@@ -491,23 +517,34 @@ impl Face {
 // obj parser
 
 
-    fn parse_row((_,s):(usize,&str), mut verts:&mut Vec<Vector>, mut faces:&mut Vec<Face>, mut uvs:&mut Vec<Vec2>) {
+    fn parse_row((_,s):(usize,&str), mut verts:&mut Vec<Vector>, mut faces:&mut Vec<Face>, mut uvs:&mut Vec<Vec2>, mut normals:&mut Vec<Vector>) {
         let mut tokens = s.split_whitespace();
         let first = tokens.next();
         match first {
-            Some("v")   => parse_vector(&mut tokens, &mut verts),
+            Some("v")   => parse_position(&mut tokens, &mut verts),
+            Some("vn")  => parse_normal(&mut tokens, &mut normals),
             Some("vt") 	=> parse_uv(&mut tokens, &mut uvs),
             Some("f")   => create_face(&mut tokens, &mut faces),
             _           => (),
         };
     }
-    fn parse_vector(tokens: &mut SplitWhitespace, verts:&mut Vec<Vector>) {
+    fn parse_position(tokens: &mut SplitWhitespace, verts:&mut Vec<Vector>) {
         if let Some(x) = tokens.next(){
             if let Some(y) = tokens.next(){
-                 if let Some(z) = tokens.next()
-                 {
+                 if let Some(z) = tokens.next(){
                     let p = Vector::new(x.parse().unwrap(),y.parse().unwrap(),z.parse().unwrap());
                     verts.push(p);
+                }
+            }
+        }
+    }
+	// flipping coordinates due to obj formatting
+    fn parse_normal(tokens: &mut SplitWhitespace, normals:&mut Vec<Vector>) {
+        if let Some(x) = tokens.next(){
+            if let Some(y) = tokens.next(){
+                 if let Some(z) = tokens.next(){
+                    let mut n = Vector::new(x.parse().unwrap(),y.parse().unwrap(),z.parse().unwrap());
+                    normals.push(n);
                 }
             }
         }
@@ -515,60 +552,73 @@ impl Face {
     fn parse_uv(tokens: &mut SplitWhitespace, uvs:&mut Vec<Vec2>) {
         if let Some(x) = tokens.next(){
             if let Some(y) = tokens.next(){
-                 //if let Some(z) = tokens.next()
-                 //{
-                    let p = Vec2::new(x.parse().unwrap(),y.parse().unwrap());
-                    //println!("{:?}",p );
-                    uvs.push(p);
-                //}
+				let p = Vec2::new(x.parse().unwrap(),y.parse().unwrap());
+				//println!("{:?}",p );
+				uvs.push(p);
             }
         }
     }
+
     fn create_face(tokens: &mut SplitWhitespace, faces:&mut Vec<Face>) {
         if let Some(f) = parse_indexes(tokens) {faces.push(f);}   
     }
+
     fn parse_indexes(tokens: &mut SplitWhitespace) -> Option<Face> {
-        let mut verts:Vec<usize> = Vec::with_capacity(3);
-        let mut uvs:Vec<usize> = Vec::with_capacity(3);
+        let mut verts:Vec<usize>   = Vec::with_capacity(3);
+        let mut uvs:Vec<usize>     = Vec::with_capacity(3);
+        let mut normals:Vec<usize> = Vec::with_capacity(3);
+
         for word in tokens {
             let mut digits = word.split("/");
-            let v = digits.nth(0);
+            let v  = digits.nth(0);
             let uv = digits.nth(0);
+			let n  = digits.nth(0);
             //println!("v: {:?}   uv: {:?}",v,uv );
             if let Some(i) = v {
                 let num:usize = i.parse().unwrap();
                 verts.push(num);
             }
-             if let Some(i) = uv {
-                let num:usize = i.parse().unwrap();
-                uvs.push(num);
+            if let Some(i) = uv {
+            	let num:usize = i.parse().unwrap();
+            	uvs.push(num);
+            }  
+            if let Some(i) = n {
+            	let num:usize = i.parse().unwrap();
+            	normals.push(num);
             }  
         }
-        if verts.len() >= 3 { 
-        	if uvs.len() == 3 { return Some(Face::new_with_uvs(verts[0] - 1, verts[1] - 1, verts[2] - 1, uvs[0] - 1, uvs[1] - 1, uvs[2] - 1))}
-            else {return Some(Face::new(verts[0] - 1, verts[1] - 1, verts[2] - 1));}
+		let out_verts   = (verts[0] - 1, verts[1] - 1, verts[2] - 1);
+		let out_normals = (normals[0] - 1, normals[1] - 1, normals[2] - 1);
+		let out_uvs = if verts.len() >= 3 { (uvs[0] - 1, uvs[1] - 1, uvs[2] - 1)} else {(0,0,0)};
+
+        if verts.len() >= 3
+		{ 
+        	return Some(Face::new(out_verts, out_normals, out_uvs));
         }
         None
     }
-    pub fn open(filename: &str) -> Polymesh
+
+
+
+    pub fn open(filename: &str) -> Option<Polymesh>
     {
-        let now = time::Instant::now();
-        let mut f = File::open(filename).expect("file not found");
+        let mut f = File::open(filename).unwrap_or_else(|_| panic!("file not found {filename}"));
         let mut contents = String::new();
         f.read_to_string(&mut contents)
             .expect("something went wrong reading the file");
 
         let rows = contents.lines().enumerate();
-        let mut verts:Vec<Vector> = Vec::new();
-        let mut faces:Vec<Face> = Vec::new();
-        let mut uvs:Vec<Vec2> = Vec::new();
+        let mut verts:Vec<Vector>   = Vec::new();
+        let mut faces:Vec<Face>     = Vec::new();
+        let mut uvs:Vec<Vec2>       = Vec::new();
+		let mut normals:Vec<Vector> = Vec::new();
 
-        for l in rows { parse_row(l, &mut verts, &mut faces, &mut uvs);}
-       	//println!("{:?}", uvs);
+        for l in rows { parse_row(l, &mut verts, &mut faces, &mut uvs, &mut normals);}
         let mut m = Polymesh::new();
 	    m.faces = faces;
 	    m.uvs = uvs;
 	    m.vertices = verts;
-        println!("loading mesh took {} seconds",now.elapsed().as_secs());
-	    m
+		m.vnormals = normals;
+       	//println!("{:?}", m.vnormals);
+	    Some(m)
     }
