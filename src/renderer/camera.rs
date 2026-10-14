@@ -8,6 +8,8 @@ pub struct Camera {
 		pub focal: f32,
 		pub sensor: f32,
 		pub ratio: f32,
+        pub image_width: u32,
+        pub image_height: u32
 	}
 	impl fmt::Debug for Camera {
 	    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -15,16 +17,17 @@ pub struct Camera {
 	    }
 	}
 	impl Camera{
-		pub fn new() -> Camera {
+		pub fn new(image_width:u32, image_height:u32) -> Camera {
 			let mut pos = Vector::empty();
-            pos.z = -40.0;
-            pos.y = 20.0;
 			let mut up = Vector::new(0.,1.,0.);
 			let mut dir = Vector::new(0.,0.,1.);
+			let focal = 0.4f32;
+            let ratio = image_width as f32 / image_height as f32;
+            pos.z = -40.0;
+            pos.y = 20.0;
             up.rotate_x(0.2);
             dir.rotate_x(0.2);
-			let focal = 0.4f32;
-			Camera{pos:pos, up:up, dir:dir, focal:focal,sensor:0.36, ratio:1.0} 
+			Camera{pos:pos, up:up, dir:dir, focal:focal,sensor:0.36, ratio, image_width, image_height} 
 		}
 
 		pub fn calc_ray_direction(&self, u:f32, v:f32) -> Vector {
@@ -63,11 +66,19 @@ pub struct Camera {
 			self.dir = self.dir.norm();
 			self.up = self.up.norm();
 		}
+
+        // return the pixel as a [-0.5, 0.5}
+        // pixel input is float to allow subpixel rendering
+		pub fn pixel_to_st_coord(&self, x:f32, y:f32) -> (f32,f32) {
+			let s = (x / self.image_width as f32) - 0.5;
+            let t = (y / self.image_height as f32) - 0.5;
+			(s * self.ratio, t)
+		}
+
 		pub fn calc_dot_pos(&self, u:f32, v:f32) -> Vector {
+            let (x,y) = self.pixel_to_st_coord(u,v);
 			let w = self.sensor;
 			let h = self.sensor;
-			let x = u - 0.5;
-			let y = v - 0.5;
 			let mut p = self.pos + self.dir * self.focal;
 			let right = self.up.cross(self.dir);
 			p = p - self.up * y * w;  	// - was +
@@ -100,8 +111,7 @@ pub struct Camera {
 		}
 		fn make_bias(&mut self) {
 			let bias = 0.0001;
-			self.origin = self.origin + self.dir * bias;
-			self.dir = self.dir + self.dir * bias;
+			self.origin += self.dir * bias;
 		}
 		pub fn biased_from_direction(o: Vector, d: Vector) -> Ray { 
 			let mut r = Ray::from_direction(o,d);

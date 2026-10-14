@@ -1,15 +1,19 @@
 mod renderer;
 use renderer::*;
-use renderer::color::Color;
-use std::sync::{Mutex,Arc};
-use std::{time,thread};
-use std::sync::mpsc;
-use rand::Rng;
+//use renderer::color::Color;
+//use std::sync::{Mutex,Arc};
+//use std::{time,thread};
+//use std::sync::mpsc;
+//use rand::Rng;
+//use chrono;
 
 
 
 fn main() {
-    display::run();
+    let mut re = Renderer::new(500, 400);
+    re.create_demo_scene();
+    re.initialize();
+    re.start_render();
 }
 
 
@@ -20,7 +24,7 @@ fn main() {
 
 
 
-
+/*
 pub mod display
 {
     extern crate image;
@@ -31,8 +35,8 @@ pub mod display
     use piston::input::mouse;
     use super::*;
 
-    const WIDTH: u32 = 500;
-    const HEIGHT: u32 = 500;
+    const WIDTH: u32 = 2500;
+    const HEIGHT: u32 = 1800;
     
     pub fn render_frame_lines() -> image::RgbaImage {
         let re = Renderer::new(WIDTH as usize, HEIGHT as usize);
@@ -72,21 +76,6 @@ pub mod display
 
 
 
-    // really really slow test render every pixel in serial
-    pub fn render_frame() -> image::RgbaImage {
-        let re = Renderer::new(WIDTH as usize, HEIGHT as usize);
-        let mut img = image::RgbaImage::new(WIDTH,HEIGHT);
-
-
-        for x in 0..WIDTH {
-            for y in 0..HEIGHT 
-            {
-                let pixel = re.render(x as i32,y as i32);
-                img.put_pixel(x,y,image::Rgba([pixel.0, pixel.1,pixel.2,255]));
-            }
-        }
-    img
-    }
 
 
 
@@ -97,7 +86,7 @@ pub mod display
 
 
 
-const BUCKETSIZE: u16 = 32;
+const BUCKETSIZE: u16 = 16;
 
 pub fn precalculate_bucket_positions( width:usize, height:usize) -> Vec<(u16,u16)> {
     let mut positions = vec!();
@@ -182,10 +171,12 @@ impl BucketRenderer
                 // increase to completion counter
                 *counter_ref += 1usize;
 
-                // was this the last bucket
+                // was this the last bucket?
+                // if so save final buffer
                 if *counter_ref == num_buckets {
                     println!("done");
-                    imgRef.save("C:/Users/j.krein/Desktop/test/test.jpg");
+                    let time = chrono::Utc::now().timestamp();
+                    imgRef.save("C:/Users/j.krein/Desktop/test/rendering_".to_owned() + &time.to_string() + ".jpg");
                 }
 
                 _tx.send(imgRef.clone());
@@ -201,9 +192,15 @@ impl BucketRenderer
 
 
 
-
-
     pub fn run() {
+        let bucketrenderer = BucketRenderer::new(WIDTH.try_into().unwrap(),HEIGHT.try_into().unwrap());
+        let img = bucketrenderer.render_buckets();
+        loop {
+                img.recv();
+        }
+    }
+
+    pub fn run_preview() {
         let bucketrenderer = BucketRenderer::new(WIDTH.try_into().unwrap(),HEIGHT.try_into().unwrap());
         let img = bucketrenderer.render_buckets();
         println!("creating window");
@@ -235,3 +232,5 @@ impl BucketRenderer
 
 }
 
+
+*/
