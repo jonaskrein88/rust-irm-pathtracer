@@ -59,7 +59,7 @@ pub struct Camera {
 			let right = self.dir.norm().cross(self.up.norm()).norm() * x * mult;
 			self.translate(right);
 		}
-		pub fn rotate(&mut self, x: f32){
+		pub fn rotate_y(&mut self, x: f32){
 			let mult = 0.01;
 			self.dir.rotate_y(-x * mult);
 			self.up.rotate_y(-x * mult);

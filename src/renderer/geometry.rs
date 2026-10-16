@@ -4,6 +4,15 @@ use std::fs::File;
 use std::str::{SplitWhitespace, Lines};
 use std::io::Read;
 use std::time;
+use std::collections::HashMap;
+
+use bvh::aabb::{Aabb, Bounded};
+use bvh::bounding_hierarchy::{BHShape, BoundingHierarchy};
+use bvh::bvh::Bvh;
+use bvh::ray::Ray as BvhRay;
+use nalgebra::{Point3, Vector3};
+
+
 
 
 
@@ -30,19 +39,18 @@ impl Light {
 
 
 
-#[derive(Debug)]
+#[derive(Debug,Copy,Clone)]
 pub struct Face {
     a:usize,
     b:usize,
     c:usize,
-
 	na:usize,
 	nb:usize,
 	nc:usize,
-
     uva:usize,
     uvb:usize,
-    uvc:usize
+    uvc:usize,
+	material_id:usize
 }
 
 impl Face
@@ -55,11 +63,36 @@ impl Face
         let face = Face{
 			a:verts.0, b:verts.1, c:verts.2,
 			uva:uvs.0, uvb:uvs.1, uvc:uvs.2,
-			na:normals.0, nb:normals.1, nc:normals.2};
+			na:normals.0, nb:normals.1, nc:normals.2,
+			material_id:0
+		};
 		face
     }
+	
 }
 
+
+
+// proxy triangle for BVH
+struct BvhTriangle {
+    pub original_face_index: usize,
+    pub aabb: Aabb<f32, 3>,
+	pub node_index: usize
+
+}
+impl Bounded<f32, 3> for BvhTriangle {
+    fn aabb(&self) -> Aabb<f32, 3> {
+        self.aabb
+    }
+}
+impl BHShape<f32, 3> for BvhTriangle {
+    fn set_bh_node_index(&mut self, index: usize) {
+        self.node_index = index;
+    }
+    fn bh_node_index(&self) -> usize {
+        self.node_index
+    }
+}
 
 
 
@@ -74,10 +107,12 @@ impl Face
 		fnormals:  Vec<Vector>,
 		ftangents: Vec<Vector>,
 		aabb:     (Vector,Vector),
-		//has_uvs:   bool, // can go TODO
 		uvs:       Vec<Vec2>,
 		vnormals:  Vec<Vector>,
 		vtangents: Vec<Vector>,
+		num_materials : usize,
+		bvh :             Option<Bvh<f32,3>>,
+		bvh_proxy_faces : Vec<BvhTriangle>
 	}
 
 	impl Polymesh
@@ -92,6 +127,9 @@ impl Face
 				uvs:Vec::new(),
 				vtangents: Vec::new(),
 				vnormals:Vec::new(),
+				num_materials:1,
+				bvh:None,
+				bvh_proxy_faces:Vec::new(),
 			}
 		}
 		fn pre_calculate_aabb(&mut self) {
@@ -107,11 +145,101 @@ impl Face
 			}
 			self.aabb = (min,max);
 		}
+
+		fn prepare_for_bvh(&mut self)
+		{
+			// pre-calculating the bounding boxes up front
+			let mut bvh_triangles: Vec<BvhTriangle> = self.faces.iter().enumerate().map(|(idx, face)| {
+				let p0 = self.vertices[face.a];
+				let p1 = self.vertices[face.b];
+				let p2 = self.vertices[face.c];
+
+				let min = Point3::new(
+					p0.x.min(p1.x).min(p2.x),
+					p0.y.min(p1.y).min(p2.y),
+					p0.z.min(p1.z).min(p2.z),
+				);
+				let max = Point3::new(
+					p0.x.max(p1.x).max(p2.x),
+					p0.y.max(p1.y).max(p2.y),
+					p0.z.max(p1.z).max(p2.z),
+				);
+				BvhTriangle {
+					original_face_index: idx,
+					aabb: Aabb::with_bounds(min, max),
+					node_index: 0 // default
+				}
+			}).collect();
+			self.bvh = Some(Bvh::build(&mut bvh_triangles));
+			self.bvh_proxy_faces = bvh_triangles;
+		}
+
+
+		
+		// traverse bvh
+		// get the original faces of our candidate proxies
+		// pass to iterate faces
+		// returns the result from iterate_faces
+		fn cast_ray_with_bvh(&self, ray:&Ray) -> Option<(Vector, Vector, Vec2, Vector)> 
+		{
+			// convert our Ray to BvHRay
+			let bvh_ray = BvhRay::new(
+				Point3::new(ray.origin.x, ray.origin.y, ray.origin.z), 
+				Vector3::new(ray.dir.x, ray.dir.y, ray.dir.z)
+			);
+
+			
+			if let Some(ref bvh) = self.bvh
+			{
+				// traverse the hierarchy
+				// returns a Vec<&BvhTriangle> containing only the faces whose bounding boxes were hit
+				let potential_hits = bvh.traverse(&bvh_ray, &self.bvh_proxy_faces);
+				let mut best_dist = f32::MAX;
+				let mut best_hit: Option<(Vector,&Face,f32,f32,f32)> = None;
+				
+				for proxy in potential_hits
+				{
+					let face = &self.faces[proxy.original_face_index];
+					let hit = self.calculate_hit(ray, face, &self.fnormals[proxy.original_face_index]);
+					match hit {
+						None => continue,
+						Some((pos,..)) => {
+							let dist = (ray.origin - pos).length();
+							if dist < best_dist {
+								best_dist = dist;
+								best_hit = hit;
+							}
+						}
+					}
+				}
+				match best_hit {
+					None => return None,
+					Some((pos, f, u,v,w)) => {
+						let normal = self.interpolate_normal(f,(u,v,w));
+						//let uv = if self.has_uvs {self.interpolate_uv(f,(u,v,w))} else {Vec2::new(0.,0.)};
+						//let tangent = if self.has_uvs {self.interpolate_tangent(f,(u,v,w))} else {Vector::new(1.,0.,0.)};
+						let tangent = Vector::new(1.0,0.0,0.0);
+						let uv = Vec2::new(0.0,0.0);
+
+						return Some((pos, normal, uv, tangent))
+					},
+				}
+			}
+			panic!("no bvh found on mesh");
+			None
+		} 
+		
+
+
+
+
+
+
 		fn prepass(&mut self) {
 			self.pre_calculate_aabb();
 			//if self.uvs.len() > 0 {self.has_uvs = true}
 			self.pre_calculate_fnormals();
-			//self.calculate_vertex_normals();
+			self.prepare_for_bvh();
 		}
 
 
@@ -227,7 +355,11 @@ impl Face
 				None => {panic!("Face index out of range");},
 			}
 		}
-		fn iterate_faces(&self, ray:&Ray) -> Option<(Vector, Vector, Vec2, Vector)> {
+		
+		// legacy; for non BVH
+		// Option(pos, normal, uv, tangent)
+		fn iterate_faces(&self, ray:&Ray) -> Option<(Vector, Vector, Vec2, Vector)>
+		{
 			if !self.calculate_aabb_intersection(ray) { return None;}
 			let mut best_dist = f32::MAX;
 			let mut best_hit: Option<(Vector,&Face,f32,f32,f32)> = None;
@@ -368,8 +500,8 @@ impl Face
 	pub struct Geo {
 		pub id: u32,
 		pub pos: Vector,
-		pub material: Material,
 		pub shape: Shape,
+		pub materials: Vec<Option<usize>>
 	}
 
 	impl Geo
@@ -380,31 +512,39 @@ impl Face
 				id:0,
 				pos:Vector::empty(),
 				shape:Shape::Sphere(1.0),
-				material:Material::new(),
+				materials:Vec::new()
 			}
 		}
-		pub fn prepass(&mut self) {
-			if let Shape::Mesh(ref mut m) = self.shape { m.prepass();}
-		}
-		pub fn create_sphere(pos: Vector) -> Geo {
+
+		pub fn create_sphere(pos: Vector, size:f32) -> Self {
 			let mut s = Geo::new();
 			s.pos = pos;
-			s.set_size(0.2);
+			s.shape = Shape::Sphere(size);
 			s
 		}
-		pub fn create_mesh(mesh:Polymesh) -> Geo {
+
+		pub fn from_mesh(mesh:Polymesh) -> Self {
 			let mut g = Geo::new();
+			// create material slots based on the number of ids on the mesh
+			g.materials = vec![None; mesh.num_materials];
 			g.shape = Shape::Mesh(mesh);
 			g
 		}
-		pub fn set_size(&mut self,s: f32) {
-			self.shape = Shape::Sphere(s);
-		}
+
 		pub fn translate(mut self, v:Vector) -> Self
 		{
 			self.pos += v;
 			self
 		}
+		
+		pub fn assign_material(mut self, slot:usize, mtl:usize) -> Self
+		{
+			let mtl_slot = self.materials.get_mut(slot);
+			if let Some(i) = mtl_slot {*i = Some(mtl)}
+			else {println!("Material slot out of range {slot}");}
+			self
+		}
+
 		pub fn calculate(&self, ray:&Ray) -> Option<Hitresult> {
 			match self.shape {
 				Shape::Sphere(s) 	=> self.calulate_sphere(ray,s),
@@ -433,7 +573,7 @@ impl Face
 			let d = (self.pos - hit_pos).norm();
 			let u = 0.5 + d.z.atan2(d.x) / TWO_PI;
 			let v = 0.5 - d.y.asin() / PI;
-			let result = Hitresult::new_with_uvs(hit_pos, hit_normal,Vec2::new(u,v), self.id, self);
+			let result = Hitresult::new_with_uvs(hit_pos, hit_normal,Vec2::new(u,v), self.id, self, 0);
 			Some(result)
 		}
 		pub fn calculate_plane(&self, ray:&Ray, pos: Vector, normal:Vector) -> Option<Hitresult> {
@@ -445,17 +585,18 @@ impl Face
 				let t = p010.dot(n) / denom;
 				if t >= 0. {
 					let hit_pos = ray.origin + ray.dir * t;
-					let hit = Hitresult::new( hit_pos, normal, self.id, self);
+					let hit = Hitresult::new( hit_pos, normal, self.id, self, 0);
 					return Some(hit);
 				}
 			}
 			None
 		}
 		pub fn calculate_mesh(&self, ray:&Ray, mesh:&Polymesh) -> Option<Hitresult> {
-			let hit = mesh.iterate_faces(ray);
+			//let hit = mesh.iterate_faces(ray);
+			let hit = mesh.cast_ray_with_bvh(ray);
 			match hit{
 				None => return None,
-				Some((p,n,uv, t)) => return Some(Hitresult::new_with_tan(p,n,uv,t, self.id, self)),
+				Some((p,n,uv, t)) => return Some(Hitresult::new_with_tan(p,n,uv,t, self.id, self, 0)),
 			}
 		}
 
@@ -517,15 +658,23 @@ impl Face
 // obj parser
 
 
-    fn parse_row((_,s):(usize,&str), mut verts:&mut Vec<Vector>, mut faces:&mut Vec<Face>, mut uvs:&mut Vec<Vec2>, mut normals:&mut Vec<Vector>) {
+    fn parse_row((_,s):(usize,&str),
+		verts:&mut Vec<Vector>,
+		faces:&mut Vec<Face>,
+		uvs:&mut Vec<Vec2>,
+		normals:&mut Vec<Vector>,
+		material_map: &mut HashMap<String,usize>,
+		current_material: &mut usize ) 
+		{
         let mut tokens = s.split_whitespace();
         let first = tokens.next();
         match first {
-            Some("v")   => parse_position(&mut tokens, &mut verts),
-            Some("vn")  => parse_normal(&mut tokens, &mut normals),
-            Some("vt") 	=> parse_uv(&mut tokens, &mut uvs),
-            Some("f")   => create_face(&mut tokens, &mut faces),
-            _           => (),
+            Some("v")         => parse_position(&mut tokens, verts),
+            Some("vn")        => parse_normal(&mut tokens, normals),
+            Some("vt") 	      => parse_uv(&mut tokens, uvs),
+            Some("f")   	  => create_face(&mut tokens, faces, current_material),
+            Some("usemtl")    => parse_material_id(&mut tokens, material_map, current_material),
+            _                 => (),
         };
     }
     fn parse_position(tokens: &mut SplitWhitespace, verts:&mut Vec<Vector>) {
@@ -538,7 +687,6 @@ impl Face
             }
         }
     }
-	// flipping coordinates due to obj formatting
     fn parse_normal(tokens: &mut SplitWhitespace, normals:&mut Vec<Vector>) {
         if let Some(x) = tokens.next(){
             if let Some(y) = tokens.next(){
@@ -559,11 +707,34 @@ impl Face
         }
     }
 
-    fn create_face(tokens: &mut SplitWhitespace, faces:&mut Vec<Face>) {
-        if let Some(f) = parse_indexes(tokens) {faces.push(f);}   
+
+
+
+    fn parse_material_id(tokens: &mut SplitWhitespace, materials:&mut HashMap<String,usize>, current_index: &mut usize)
+	{
+        if let Some(x) = tokens.next(){
+			let name : String = x.parse().unwrap();
+			let entry = materials.get(&name);
+			match entry {
+				Some(&index) => *current_index = index,
+				None        => {
+					let index = materials.len();
+					println!("material {name} added at {}", index);
+					materials.insert(name,index);
+					*current_index = index;
+				}
+			}
+        }
     }
 
-    fn parse_indexes(tokens: &mut SplitWhitespace) -> Option<Face> {
+    fn create_face(tokens: &mut SplitWhitespace, faces:&mut Vec<Face>, current_material: &usize) {
+        if let Some(mut f) = face_from_indices(tokens) {
+			f.material_id = *current_material;
+			faces.push(f);
+		}   
+    }
+
+    fn face_from_indices(tokens: &mut SplitWhitespace) -> Option<Face> {
         let mut verts:Vec<usize>   = Vec::with_capacity(3);
         let mut uvs:Vec<usize>     = Vec::with_capacity(3);
         let mut normals:Vec<usize> = Vec::with_capacity(3);
@@ -613,12 +784,31 @@ impl Face
         let mut uvs:Vec<Vec2>       = Vec::new();
 		let mut normals:Vec<Vector> = Vec::new();
 
-        for l in rows { parse_row(l, &mut verts, &mut faces, &mut uvs, &mut normals);}
+		let mut material_map: HashMap<String,usize> = HashMap::new();
+		let mut current_material = 0;
+
+        for row in rows
+		{
+			parse_row(row, 
+				&mut verts,
+				&mut faces,
+				&mut uvs,
+				&mut normals,
+				&mut material_map,
+				&mut current_material
+			);
+		}
         let mut m = Polymesh::new();
 	    m.faces = faces;
 	    m.uvs = uvs;
 	    m.vertices = verts;
 		m.vnormals = normals;
        	//println!("{:?}", m.vnormals);
+		
+		// check if we actually found some material assignments 
+		if material_map.len() > 0 {
+			m.num_materials = material_map.len();
+		}
+		m.prepass();
 	    Some(m)
     }

@@ -12,7 +12,6 @@ use renderer::*;
 fn main() {
     let mut re = Renderer::new(500, 400);
     re.create_demo_scene();
-    re.initialize();
     re.start_render();
 }
 

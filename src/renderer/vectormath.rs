@@ -217,11 +217,21 @@ pub struct Vec2{
     pub x:f32,
     pub y:f32,
 }
+
 impl Vec2 { 
     pub fn new(x:f32, y:f32) -> Vec2 {
         Vec2{x:x, y:y}
     }
     pub fn to_color(&self) -> Color {Color::new(self.x % 1.0, self.y % 1.0, 0.0)}
+    
+    pub fn jitter(self) -> Self
+    {
+        let x = rand::random::<f32>();
+        let y = rand::random::<f32>();
+        Self::new(
+            (self.x + x).fract(),
+            (self.y + y).fract())
+    }
 }
 impl Mul<f32> for Vec2 {
     type Output = Vec2;
