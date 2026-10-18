@@ -175,12 +175,12 @@ impl BHShape<f32, 3> for BvhTriangle {
 		}
 
 
-		
+
 		// traverse bvh
 		// get the original faces of our candidate proxies
 		// pass to iterate faces
 		// returns the result from iterate_faces
-		fn cast_ray_with_bvh(&self, ray:&Ray) -> Option<(Vector, Vector, Vec2, Vector)> 
+		fn cast_ray_with_bvh(&self, ray:&Ray) -> Option<(Vector, Vector, Vec2, Vector, usize)> 
 		{
 			// convert our Ray to BvHRay
 			let bvh_ray = BvhRay::new(
@@ -221,7 +221,7 @@ impl BHShape<f32, 3> for BvhTriangle {
 						let tangent = Vector::new(1.0,0.0,0.0);
 						let uv = Vec2::new(0.0,0.0);
 
-						return Some((pos, normal, uv, tangent))
+						return Some((pos, normal, uv, tangent, f.material_id))
 					},
 				}
 			}
@@ -234,10 +234,10 @@ impl BHShape<f32, 3> for BvhTriangle {
 
 
 
-
-		fn prepass(&mut self) {
+		// run before rendering
+		// after all transformations
+		pub fn prepass(&mut self) {
 			self.pre_calculate_aabb();
-			//if self.uvs.len() > 0 {self.has_uvs = true}
 			self.pre_calculate_fnormals();
 			self.prepare_for_bvh();
 		}
@@ -284,11 +284,6 @@ impl BHShape<f32, 3> for BvhTriangle {
 		}
 
 		*/
-		pub fn transform(&mut self, m:Matrix) {
-			for v in &mut self.vertices {
-				*v = v.transform(&m);
-			}
-		}
 		/*
 		fn calculate_vertex_normals(&mut self) {
 			// normals
@@ -333,15 +328,43 @@ impl BHShape<f32, 3> for BvhTriangle {
 			out_normal.norm()
 		}
 		*/
-		pub fn translate(&mut self, t:Vector) {
+
+		pub fn transform(mut self, m:&Matrix) -> Self{
+			for v in &mut self.vertices {
+				*v = m.multiply_point(*v);
+			}
+			self
+		}
+
+		pub fn transform_normals(mut self, m:&Matrix) -> Self{
+			for v in &mut self.vnormals {
+				*v = m.multiply_vector(*v);
+			}
+			for v in &mut self.fnormals {
+				*v = m.multiply_vector(*v);
+			}
+			self
+		}
+
+		pub fn translate(mut self, t:Vector) -> Self{
 			for v in &mut self.vertices {
 				*v = v.add(t);
 			}
+			self
 		}
-		pub fn scale(&mut self, f:f32) {
-			let m = Matrix::scale(f);
-			self.transform(m);
+		pub fn translate_y(mut self, t:f32) -> Self{
+			self.translate(Vector::new(0.0,t,0.0))
 		}
+		pub fn scale(mut self, f:f32) -> Self{
+			let m = Matrix::from_scale(f);
+			self.transform(&m)
+		}
+		pub fn rotate_y(mut self, f:f32) -> Self{
+			let m = Matrix::from_y_rotation(f);
+			self.transform(&m).transform_normals(&m)
+		}
+		
+		
 		fn get_positions(&self, f:&Face) -> Points {
 			let a = self.get_position(f.a);
 			let b = self.get_position(f.b);
@@ -357,8 +380,8 @@ impl BHShape<f32, 3> for BvhTriangle {
 		}
 		
 		// legacy; for non BVH
-		// Option(pos, normal, uv, tangent)
-		fn iterate_faces(&self, ray:&Ray) -> Option<(Vector, Vector, Vec2, Vector)>
+		// Option(pos, normal, uv, tangent, mtl_id)
+		fn iterate_faces(&self, ray:&Ray) -> Option<(Vector, Vector, Vec2, Vector, usize)>
 		{
 			if !self.calculate_aabb_intersection(ray) { return None;}
 			let mut best_dist = f32::MAX;
@@ -385,7 +408,7 @@ impl BHShape<f32, 3> for BvhTriangle {
                     let tangent = Vector::new(1.0,0.0,0.0);
                     let uv = Vec2::new(0.0,0.0);
 
-					Some((pos, normal, uv, tangent))
+					Some((pos, normal, uv, tangent, f.material_id))
 				},
 			}
 		}
@@ -573,7 +596,7 @@ impl BHShape<f32, 3> for BvhTriangle {
 			let d = (self.pos - hit_pos).norm();
 			let u = 0.5 + d.z.atan2(d.x) / TWO_PI;
 			let v = 0.5 - d.y.asin() / PI;
-			let result = Hitresult::new_with_uvs(hit_pos, hit_normal,Vec2::new(u,v), self.id, self, 0);
+			let result = Hitresult::new(hit_pos, hit_normal, ray.origin, Vec2::new(u,v), self.id, self, 0);
 			Some(result)
 		}
 		pub fn calculate_plane(&self, ray:&Ray, pos: Vector, normal:Vector) -> Option<Hitresult> {
@@ -585,7 +608,7 @@ impl BHShape<f32, 3> for BvhTriangle {
 				let t = p010.dot(n) / denom;
 				if t >= 0. {
 					let hit_pos = ray.origin + ray.dir * t;
-					let hit = Hitresult::new( hit_pos, normal, self.id, self, 0);
+					let hit = Hitresult::new( hit_pos, normal, ray.origin, Vec2::zero(), self.id, self, 0);
 					return Some(hit);
 				}
 			}
@@ -596,7 +619,7 @@ impl BHShape<f32, 3> for BvhTriangle {
 			let hit = mesh.cast_ray_with_bvh(ray);
 			match hit{
 				None => return None,
-				Some((p,n,uv, t)) => return Some(Hitresult::new_with_tan(p,n,uv,t, self.id, self, 0)),
+				Some((p,n,uv, _t, mtl_id)) => return Some(Hitresult::new(p,n,ray.origin,uv, self.id, self, mtl_id)),
 			}
 		}
 
@@ -730,6 +753,7 @@ impl BHShape<f32, 3> for BvhTriangle {
     fn create_face(tokens: &mut SplitWhitespace, faces:&mut Vec<Face>, current_material: &usize) {
         if let Some(mut f) = face_from_indices(tokens) {
 			f.material_id = *current_material;
+			//println!("added face with id {:?}", f.material_id);
 			faces.push(f);
 		}   
     }
@@ -809,6 +833,5 @@ impl BHShape<f32, 3> for BvhTriangle {
 		if material_map.len() > 0 {
 			m.num_materials = material_map.len();
 		}
-		m.prepass();
 	    Some(m)
     }

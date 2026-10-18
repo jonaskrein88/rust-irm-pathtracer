@@ -10,7 +10,7 @@ use renderer::*;
 
 
 fn main() {
-    let mut re = Renderer::new(500, 400);
+    let mut re = Renderer::new(1200, 720);
     re.create_demo_scene();
     re.start_render();
 }

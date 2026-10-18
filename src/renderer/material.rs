@@ -118,7 +118,6 @@ pub enum BRDF {
 pub struct Material {
     pub color: Color,
     pub diffuse: BRDF,
-    pub specular: BRDF,
     pub reflection_color: Color,
     pub reflection_enabled: bool,
     pub refraction_enabled: bool,
@@ -133,7 +132,6 @@ impl Material {
     pub fn new() -> Material { Material {
         color:Color::light_grey(), 
         diffuse:BRDF::Lambert, 
-        specular:BRDF::None, 
         reflection_enabled:false,
         refraction_enabled:false,
         reflection_color: Color::white(),
@@ -169,7 +167,6 @@ impl Material {
     pub fn new_light_material() -> Material {
         let mut m = Material::new();
         m.diffuse = BRDF::Constant;
-        m.specular = BRDF::None;
         m.reflection_enabled = false;
         m
     }
@@ -198,21 +195,6 @@ impl Material {
         albedo * nl.max(0.0) * (a + b * s / t) / PI
     }
     
-    fn calc_blinn(&self, pos:Vector, normal:Vector, light:&Light, origin:Vector) -> f32 {
-        let light_dir = (light.pos - pos).norm();
-        let view_dir = (origin - pos).norm();
-        let half = (light_dir + view_dir).norm();
-        let spec = normal.dot(half).max(0.0).powf((1.0/self.roughness) * 80.);
-        spec
-    }
-    fn calc_phong(&self, pos:Vector, normal:Vector, light:&Light, origin:Vector) -> f32 {
-        let sharpness = (1.0/self.roughness) * 40.;
-        let light_dir = (light.pos - pos).norm();
-        let view = (origin - pos).norm();
-       let reflect = Vector::calc_reflect_vector(-light_dir,normal);
-        let spec = view.dot(reflect).max(0.).powf(sharpness);
-        spec
-    }
     
     pub fn calc_diffuse(&self, pos: Vector, mut normal: Vector, tan:Vector, light: &Light, origin:Vector, uv:Vec2) -> Color {
 
@@ -240,17 +222,4 @@ impl Material {
         color * amount * light.color
     }
 
-
-    pub fn calc_specular(&self, pos:Vector, normal:Vector, light: &Light, origin:Vector) -> Color {
-        if !self.reflection_enabled {return Color::black()}
-        if let BRDF::None = self.specular {return Color::black();}
-        let spec = Material::calc_blinn(&self,pos, normal, light, origin) * light.calc_falloff(pos);
-
-//        let spec = match self.specular {
-//            BRDF::Blinn 	=> Material::calc_blinn(&self,pos, normal, light, origin) * light.calc_falloff(pos),
-//            BRDF::Phong 	=> Material::calc_phong(&self,pos, normal, light, origin) * light.calc_falloff(pos),
-//            _ 				=> 0.0,
-//        };
-        light.color * spec
-    }
 }

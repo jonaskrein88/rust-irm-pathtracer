@@ -2,40 +2,99 @@ use super::*;
 use std::fmt;
 
 pub struct Camera {
-		pub pos: Vector,
-		pub up: Vector,
-		pub dir: Vector,
-		pub focal: f32,
-		pub sensor: f32,
+		pub transform: Matrix,
+		pub focal_length: f32,
+		pub sensor_width: f32,
 		pub ratio: f32,
         pub image_width: u32,
         pub image_height: u32
 	}
 	impl fmt::Debug for Camera {
 	    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-	        write!(f, "Cam {} {} {}", self.pos.x, self.pos.y, self.pos.z)
+			let pos = self.get_pos();
+	        write!(f, "Cam {} {} {}", pos.x, pos.y, pos.z)
 	    }
 	}
 	impl Camera{
-		pub fn new(image_width:u32, image_height:u32) -> Camera {
-			let mut pos = Vector::empty();
-			let mut up = Vector::new(0.,1.,0.);
-			let mut dir = Vector::new(0.,0.,1.);
-			let focal = 0.4f32;
-            let ratio = image_width as f32 / image_height as f32;
-            pos.z = -40.0;
-            pos.y = 20.0;
-            up.rotate_x(0.2);
-            dir.rotate_x(0.2);
-			Camera{pos:pos, up:up, dir:dir, focal:focal,sensor:0.36, ratio, image_width, image_height} 
+		pub fn new(image_width:u32, image_height:u32) -> Camera
+		{
+			let ratio = image_width as f32 / image_height as f32;
+			Camera{
+				transform: Matrix::identity(),
+				focal_length: 50.0,
+				sensor_width: 36.0, 
+				ratio,
+				image_width,
+				image_height
+			} 
 		}
 
-		pub fn calc_ray_direction(&self, u:f32, v:f32) -> Vector {
-			let p = self.calc_dot_pos(u,v);
-			(p - self.pos).norm()
+		pub fn calc_ray_direction(&self, pixel_x: f32, pixel_y: f32) -> Vector {
+			let half_w = self.sensor_width * 0.5;
+			let half_h = (self.sensor_width / self.ratio) * 0.5;
+
+			let s = (pixel_x / self.image_width as f32) - 0.5;
+			let t = 0.5 - (pixel_y / self.image_height as f32); 
+
+			let local_pixel_pos = Vector::new(
+				s * 2.0 * half_w,
+				t * 2.0 * half_h,
+				-self.focal_length // at the focal distance down -z
+			);
+			self.transform.multiply_vector(local_pixel_pos)
 		}
 
 
+		pub fn from_blender_transform(&mut self, values:&[[f32;4];4])
+		{
+			let m = 
+			[
+				[ values[0][0],  values[0][1],  values[0][2],  values[0][3]],
+				[ values[2][0],  values[2][1],  values[2][2],  values[2][3]],
+				[-values[1][0], -values[1][1], -values[1][2], -values[1][3]],
+				[ values[3][0],  values[3][1],  values[3][2],  values[3][3]],
+			];
+			self.transform.fields.copy_from_slice(&m); 
+		}
+
+
+		pub fn set_lens(&mut self, focal: f32, sensor_width: f32) {
+			self.focal_length = focal;
+			self.sensor_width = sensor_width;
+		}
+		pub fn set_focal_length(&mut self, f:f32) {
+			self.focal_length = f;
+		}
+		
+		pub fn get_pos(&self) -> Vector {
+			self.transform.get_translation()
+		}
+		pub fn walk(&mut self, distance: f32) {
+			// In DCC conventions, looking forward means moving along the negative Z-axis.
+			// If your engine maps forward to +Z, change this to (0.0, 0.0, distance)
+			let translation_vector = Vector::new(0.0, 0.0, -distance);
+			let translation_matrix = Matrix::from_translation(translation_vector);
+			self.transform = self.transform.multiply(&translation_matrix);
+		}
+		
+		
+		pub fn pan_vertical(&mut self, distance: f32) {
+			let translation_vector = Vector::new(0.0, distance, 0.0);
+			let translation_matrix = Matrix::from_translation(translation_vector);
+			self.transform = self.transform.multiply(&translation_matrix);
+		}
+
+		pub fn rotate_y(&mut self, angle_radians: f32) {
+			let rotation_matrix = Matrix::from_y_rotation(angle_radians);
+			self.transform = self.transform.multiply(&rotation_matrix);
+		}
+
+		pub fn rotate_x(&mut self, angle_radians: f32) {
+			let rotation_matrix = Matrix::from_x_rotation(angle_radians);
+			self.transform = self.transform.multiply(&rotation_matrix);
+		}
+
+		/*
 		fn translate(&mut self, p:Vector) {
 			self.pos = self.pos + p;
 			println!("cam: {:?}",self.pos );
@@ -84,6 +143,7 @@ pub struct Camera {
 			p = p - self.up * y * w;  	// - was +
 			p + right * x * h			// - was +
 		}
+		*/
 	}
 
 

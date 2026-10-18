@@ -6,7 +6,7 @@ use std::ops::{Add, Sub, Mul, Neg, Div, AddAssign};
 
 
 #[allow(dead_code)]
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Color {
     pub r:f32,
     pub g:f32,
