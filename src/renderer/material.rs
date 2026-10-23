@@ -28,6 +28,9 @@ impl Texture
         let width = pixels[0].len(); 
         Texture{pixels,width,height}
     }
+    fn get(&self, x:usize,y:usize) -> Color {
+        self.pixels[y][x]
+    }
 
     fn from_image(img:image::DynamicImage) -> Texture {
         let (width, height) = img.dimensions();
@@ -51,21 +54,17 @@ impl Texture
     pub fn open_exr (file: &str) -> Texture
     {
          let mut image = exr::prelude::read_first_rgba_layer_from_file(file,
-                // instantiate your image type with the size of the image in file
                 |resolution, _| {
                     let default_pixel = [0.0, 0.0, 0.0, 0.0];
                     let empty_line =  vec![ default_pixel; resolution.width() ];
                     let empty_image =  vec![ empty_line; resolution.height() ];
                     empty_image
                 },
-                // transfer the colors from the file to your image type,
-                // requesting all values to be converted to f32 numbers (you can also directly use f16 instead)
-                // and you could also use `Sample` instead of `f32` to keep the original data type from the file
                 |pixel_vector, position, (r, g, b, a): (f32, f32, f32, f32)| {
                     pixel_vector[position.y()][position.x()] = [r, g, b, a]
                 },
 
-            ).expect("run the `1_write_rgba` example to generate the required file");
+            ).expect("could not read file");
 
          // collect the pixels into a texture struct with colors
 
@@ -100,6 +99,129 @@ impl Texture
 
 
 
+pub struct EnvironmentSample{
+    pub direction: Vector,
+    pub radiance: Color,
+    pub pdf: f32
+}
+
+pub struct EnvironmentCdf {
+    width: usize,
+    height: usize,
+    cdf: Vec<f32>,
+}
+
+// cumulative distribution function
+// todo implement 2 level cdf for better performance
+impl EnvironmentCdf
+{
+    pub fn new(texture: &Texture) -> Self 
+    {
+        let num_pixels = texture.width * texture.height;
+
+        let mut cdf = Vec::with_capacity(num_pixels);
+        let mut total = 0.0_f64;
+
+        for y in 0..texture.height {
+            let theta = std::f64::consts::PI * (y as f64 + 0.5) / texture.height as f64;
+            let sin_theta = theta.sin();
+            for x in 0..texture.width {
+                let color = texture.get(x,y);
+                let luminance = 0.2126 * color.r as f64 + 0.7152 * color.g as f64 + 0.0722 * color.b as f64;
+                let weight = luminance.max(0.0) * sin_theta;
+                total += weight;
+                cdf.push(total as f32);
+            }
+        }
+        if total > 0.0 {
+            for value in &mut cdf {
+                *value /= total as f32;
+            }
+            // avoiding floating-point rounding overflow on the last
+            *cdf.last_mut().unwrap() = 1.0;
+        }
+        else {
+            let n = cdf.len();
+            for (i, value) in cdf.iter_mut().enumerate() {
+                *value = (i + 1) as f32 / n as f32;
+            }
+        }
+        Self {width:texture.width, height:texture.height, cdf}
+    }
+    
+    // returns a texel from cdf that >= the random number
+    pub fn get_sample_texel<T: rand::Rng>(&self,rng: &mut T) -> (usize, usize)
+    {
+        let r: f32 = rng.random();
+        let index = self.cdf.partition_point(|&value| value < r);
+        let index = index.min(self.cdf.len() - 1);
+        let x = index % self.width;
+        let y = index / self.width;
+        (x, y)
+    }
+
+    pub fn sample<R: Rng>(&self, texture: &Texture, rotation:f32, rng: &mut R) -> EnvironmentSample
+    {
+        let r: f32 = rng.gen();
+        let index = self.cdf.partition_point(|&v| v < r)
+            .min(self.cdf.len() - 1);
+
+        let x = index % self.width;
+        let y = index / self.width;
+
+        // random sample within that texel.
+        let u = (x as f32 + rng.gen::<f32>()) / self.width as f32;
+        let v = (y as f32 + rng.gen::<f32>()) / self.height as f32;
+
+        // convert UV to a world-space direction.
+        let phi = 2.0 * PI * u;
+        let theta = PI * v;
+
+        let theta = PI * v;
+        let phi = TWO_PI * (u - 0.5 - rotation);
+        let direction = Vector::new(
+            theta.sin() * phi.sin(),
+            theta.cos(),
+            theta.sin() * phi.cos(),
+        );
+
+        let radiance = texture.get(x,y);
+
+        // convert texel probability to PDF
+        let previous = if index == 0 {
+    0.0
+} else {
+    self.cdf[index - 1]
+};
+
+let texel_probability = self.cdf[index] - previous;
+
+let theta0 = PI * y as f32 / self.height as f32;
+let theta1 = PI * (y + 1) as f32 / self.height as f32;
+
+let solid_angle =
+    (2.0 * PI / self.width as f32)
+    * (theta0.cos() - theta1.cos());
+
+let pdf = texel_probability / solid_angle;
+
+        EnvironmentSample {direction,radiance,pdf}
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 pub enum BRDF {
     Lambert, 
@@ -110,13 +232,9 @@ pub enum BRDF {
     None,
 }
 
-
-
-
-
-
 pub struct Material {
-    pub color: Color,
+    pub name  : String,
+    pub color : Color,
     pub diffuse: BRDF,
     pub reflection_color: Color,
     pub reflection_enabled: bool,
@@ -130,6 +248,7 @@ pub struct Material {
 
 impl Material {
     pub fn new() -> Material { Material {
+        name:String::new(),
         color:Color::light_grey(), 
         diffuse:BRDF::Lambert, 
         reflection_enabled:false,
@@ -157,6 +276,10 @@ impl Material {
     pub fn set_roughness(mut self, roughness:f32) -> Self {
         self.roughness = roughness;
         self
+    }
+    pub fn set_name(mut self, name:&str) -> Self {
+       self.name = name.to_string();
+       self 
     }
 
 

@@ -7,6 +7,7 @@ pub mod geometry;
 pub mod material;
 pub mod color;
 pub mod framebuffer;
+pub mod scene;
 
 extern crate kdtree;
 use kdtree::KdTree;
@@ -25,7 +26,7 @@ use camera::*;
 use geometry::*;
 use material::*;
 use framebuffer::FrameBuffer;
-
+use scene::SceneImporter;
 
 
 
@@ -48,10 +49,12 @@ pub enum RenderMode {
     Beauty,
     Debug_IrradianceMap,
     Debug_IrradianceMap_Samples,
+	Debug_Raw_GI,
     Debug_GI,
     Debug_Normals,
     Debug_UVs,
 	Debug_Reflections,
+	Debug_Focus,
 }
 
 
@@ -61,10 +64,14 @@ pub struct Settings {
 	render_mode: RenderMode,
     environment:Color,
     environment_map: Option<Texture>,
+	environment_map_multiplier : f32,
+	environment_map_rotation : f32,
     reflections_enabled: bool,
     shadows_enabled: bool,
     gi_enabled: bool,
     gi_method_secondary: GiMethod,
+	irradiance_map_primary_samples: usize,
+	dof_enabled: bool,
 }
 
 impl Settings {
@@ -75,13 +82,15 @@ impl Settings {
             reflections_enabled: true,
             environment: Color::black(),
             environment_map: None,
+			environment_map_multiplier: 1.0,
+			environment_map_rotation: 0.0,
             gi_method_secondary: GiMethod::IrradianceMap,
             gi_enabled: true,
+			irradiance_map_primary_samples: 1500, // unused atm
+			dof_enabled: false,
         }
     }
 }
-
-
 
 
 
@@ -99,10 +108,14 @@ impl IRClass
     fn near_points(&self, p:Vector, num:usize) -> Vec<(f64, &(Color,Vector))> {
         self.samples.nearest(&p.to_array(), num, &squared_euclidean).unwrap()
     }
-    fn add(&mut self, p:Vector, c:Color, n:Vector) {
-        self.samples.add(p.to_array(), (c,n)).unwrap();
+    fn add(&mut self, position:Vector, color:Color, normal:Vector) {
+        self.samples.add(position.to_array(), (color,normal)).unwrap();
     } 
-    fn check_sample(&self, hit:&Hitresult)  -> Option<Color> 
+	// used during creation
+	// check if this sample is close enough
+	// and if the normal is close enough
+	// if not return None
+    fn _check_sample(&self, hit:&Hitresult)  -> Option<Color> 
     {
         let near = self.near_points(hit.pos,1);
         match near.get(0) {
@@ -114,6 +127,21 @@ impl IRClass
             }
         }
     }
+    fn check_sample(&self, hit: &Hitresult) -> Option<Color> {
+		let near = self.near_points(hit.pos, 8);
+		let max_dist = 0.1;
+		let max_angle = 0.1;
+		for (d, &(c, n)) in near {
+			if d > max_dist*max_dist {
+				continue;
+			}
+			if n.angle_between(hit.normal) > max_angle {
+				continue;
+			}
+			return Some(c);
+		}
+		None
+	}
 }
 
 
@@ -168,6 +196,7 @@ pub struct Renderer {
 	image_size: (u32,u32),
 	settings:Settings,
 	irradiance_map: IRClass,
+	environment_cdf : Option<EnvironmentCdf>
 }
 
 
@@ -188,6 +217,7 @@ impl Renderer
 			image_size:     (x,y),
 			settings:       Settings::new(),
 			irradiance_map: IRClass::new(),
+			environment_cdf: None,
 		};
 		r
 	}
@@ -204,12 +234,50 @@ impl Renderer
 		self.materials.push(mtl);
 		index
 	}
+	
+	pub fn set_environment(&mut self, environment: Texture)
+	{
+		self.environment_cdf = Some(EnvironmentCdf::new(&environment));
+		self.settings.environment_map = Some(environment);
+	}
+
+	pub fn set_image_size(&mut self, w:u32, h:u32) {
+		self.image_size.0 = w;
+		self.image_size.1 = h;
+		self.camera.image_width = w;
+		self.camera.image_height = h;
+		let ratio = w as f32 / h as f32;
+		self.camera.ratio = ratio;
+	}
+
 
 
 
 
 	pub fn create_demo_scene(&mut self) 
 	{
+
+
+		let mut project_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+		//let scene_path = project_root.join("models/blender_scene.toml");
+		let scene_path = project_root.join("models/scene_round_room.toml");
+
+
+		SceneImporter::import_scene(self, scene_path);
+
+		let mut project_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+		//let hdri_path = project_root.join("models/tomoco_studio.exr");
+		//let hdri_path = project_root.join("models/HdrSkySunset011_HDR_HIRES.exr");
+        //let hdri = material::Texture::open_exr(hdri_path.to_str().unwrap());
+        //self.settings.environment_map = Some(hdri);
+		return;
+	
+		
+
+
+
+
 		
 		self.camera.rotate_x(-0.5);
 		self.camera.pan_vertical(2.0);
@@ -257,15 +325,10 @@ impl Renderer
 		//self.settings.render_mode=RenderMode::Debug_Reflections;
 		
 		//self.settings.render_mode=RenderMode::Debug_Normals;
-		self.settings.gi_enabled = false;
+		//self.settings.shadows_enabled = false;
+		//self.settings.gi_enabled = false;
 		
 		
-		let mut project_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-
-		//let hdri_path = project_root.join("models/tomoco_studio.exr");
-		let hdri_path = project_root.join("models/HdrSkySunset011_HDR_HIRES.exr");
-        let hdri = material::Texture::open_exr(hdri_path.to_str().unwrap());
-        self.settings.environment_map = Some(hdri);
 
 
 		
@@ -280,11 +343,11 @@ impl Renderer
 		let stage_path = project_root.join("models/blender_test.obj");
 		//let stage_path = project_root.join("models/stage.obj");
 
-		let mut stage_mesh = open(stage_path.to_str().unwrap()).unwrap();
+		let mut stage_mesh = OBJ_Importer::open(stage_path.to_str().unwrap()).unwrap();
 		
 		let mut stage_geo = Geo::from_mesh(stage_mesh)
-			.assign_material(0,id_grey_mtl)
-			.assign_material(1,id_red_mtl);
+			.assign_material(0,id_red_mtl)
+			.assign_material(1,id_grey_mtl);
 
         self.add(stage_geo);
 
@@ -333,13 +396,26 @@ impl Renderer
 		{
 			if let Shape::Mesh(ref mut mesh) = node.shape {mesh.prepass();}
 		}
-		// create ir
-		if self.settings.gi_enabled && self.settings.gi_method_secondary == GiMethod::IrradianceMap {
-			println!("Calculation Irradiance Map");
-			self.create_ir();
+		// create ir only if we need it
+		if self.settings.gi_enabled && self.settings.gi_method_secondary == GiMethod::IrradianceMap
+		{
+			match self.settings.render_mode{
+                RenderMode::Beauty|RenderMode::Debug_GI|RenderMode::Debug_Raw_GI|RenderMode::Debug_IrradianceMap|RenderMode::Debug_IrradianceMap_Samples => {
+					println!("Calculating Irradiance Map");
+					self.create_ir();
+				},
+                _   => ()
+            }
 		}
-		
 	}
+
+	fn calculate_falloff(distance: f32) -> f32 {
+		// prevent dividing by zero if distance is 0
+		let epsilon = 0.0001; 
+		(distance * distance + epsilon).min(1.0)
+	}
+
+
 
 
 	// hit result contains the slot number
@@ -366,7 +442,7 @@ impl Renderer
 	}
 
 	pub fn create_ir(&mut self) {
-		let samples = 1500;
+		let samples = 3000;
 		let max_depth = 2;
 		let mut i = 0;
 		let mut ir = IRClass::new();
@@ -414,31 +490,55 @@ impl Renderer
 						surface
 					}
 				};
-				out = out + c;
+				let dist = new_hit.pos.dist(hit.pos);
+				let falloff = Self::calculate_falloff(dist);
+				out = out + c*falloff;
 			}
 		}
 		(out / samples as f32) * material.color
 	}
 
 
-	pub fn ir_read(&self, pos:Vector) -> Color 
-	{ 
+
+	pub fn ir_read(&self, pos: Vector, normal: Vector) -> Color {
 		let near_points = self.irradiance_map.near_points(pos, 20);
-		if near_points.len() == 0 {panic!("empty ir map");}
+
+		if near_points.is_empty() {
+			return Color::black();
+		}
 
 		let mut out = Color::black();
-		let mut accum = 0.0;
+		let mut accum = 0.0_f32;
 
-		for s in near_points {
-			let (_, &(col, _sample_pos)) = s;
+		let sigma = 0.35_f32;
+		let normal_power = 4.0_f32;
+		let epsilon = 1e-6_f32;
 
-			let dist = pos.dist(_sample_pos);
-			let denom = 1.0/dist.sqrt().max(0.0001) as f32;
-			out = out + col * denom;
-			accum += denom;
+		for (dist, &(col, sample_normal)) in near_points {
+			// kdtree returns the squared distance, so we need to sqrt()
+			let d = dist.sqrt() as f32;
+
+			// Gaussian spatial falloff.
+			let distance_weight = (-0.5 * (d / sigma).powi(2)).exp();
+
+			// Penalize samples from differently oriented surfaces.
+			// Assumes both normals are normalized.
+			let normal_dot = normal.dot(sample_normal).clamp(0.0, 1.0);
+			let normal_weight = normal_dot.powf(normal_power);
+
+			let weight = distance_weight * normal_weight;
+
+			out = out + col * weight;
+			accum += weight;
 		}
-		out / accum as f32
+
+		if accum <= epsilon {
+			return Color::black();
+		}
+
+		out / accum
 	}
+
 
 
     //  debug render pass
@@ -467,13 +567,6 @@ impl Renderer
 		let ray = self.ray_from_pixel(x,y);
 		self.cast_ray(&ray)
 	}
-	/*
-	pub fn cast_random_hemispherical_ray(&self, p:Vector, n:Vector) -> Option<Hitresult> {
-		let hemis = n.random_hemispherical();
-		let ray = Ray::biased_from_direction(p, hemis);
-		self.cast_ray(&ray)
-	}
-	*/
 
 /*
 	pub fn calc_refraction(&self, hit:&Hitresult, origin:Vector) -> Color {
@@ -502,28 +595,7 @@ impl Renderer
 
 
 
-   
 
-    // render pass for debugging???
-	pub fn measure_variance(&self, x: f32, y:f32) -> Color {
-		let max = 8;
-		let mut accum = Color::black();
-		let mut samples:Vec<Color> = Vec::new();
-		for _ in 0..max {
-			let xr = rand::random::<f32>();
-			let yr = rand::random::<f32>();
-			let ray = self.ray_from_pixel(x + xr, y + yr);
-			if let Some(hit) = self.cast_ray(&ray) {
-				let color = self.calculate_brdf(&hit, self.camera.get_pos());
-				accum = accum + color;
-				samples.push(color);
-			}
-		} 
-		let mean = accum / max as f32;
-		let v = Renderer::sample_variance(&samples, mean);
-		Color::new_mono(v.powf(0.5))
-		//Color::red().interpolate(Color::blue(), v.powf(0.5))
-	}
 	pub fn cast_ray(&self, ray:&Ray) -> Option<Hitresult> {
 		let mut best_depth = f32::MAX;
 		let mut best_hit: Option<Hitresult> = None;
@@ -540,18 +612,17 @@ impl Renderer
 		best_hit
 	}
 
-	pub fn calculate_brdf(&self, hit:&Hitresult, origin:Vector) -> Color {
-		//if let BRDF::Constant = hit.node.material.diffuse {return hit.node.material.color}
+	pub fn calculate_diffuse(&self, hit:&Hitresult, environment_samples:u16) -> Color {
 		let material = self.get_material(hit);
-
 		let mut out = Color::black();
 			for light in &self.lights
 			{
 				if self.settings.shadows_enabled && self.check_shadow(hit.pos, &light) {continue;}
-				let diffuse = material.calc_diffuse(hit.pos, hit.normal, hit.tangent, &light, origin, hit.uv);
-				//let spec =    material.calc_specular(hit.pos, hit.normal, &light, origin);
+				let diffuse = material.calc_diffuse(hit.pos, hit.normal, hit.tangent, &light, hit.origin_pos, hit.uv);
 				out = out + diffuse;
 			}
+		let env = self.calculate_environment_lighting(&hit, environment_samples).clamp(3.0); // clamp direct environment light at 3
+		out += env * material.color;
 		return out;
 	}
 
@@ -567,91 +638,64 @@ impl Renderer
 			if self.settings.shadows_enabled && self.check_shadow(hit.pos, &light) {continue;}
 			diffuse = diffuse + material.calc_diffuse(hit.pos, hit.normal, hit.tangent, &light, origin, hit.uv);
 		}
-		let env = self.calculate_environment_lighting(&hit,24) * material.color;
+		let env = self.calculate_environment_lighting(&hit,16) * material.color;
 		diffuse + env
     }
-
-
-	pub fn approximate_color(&self, hit:&Hitresult, origin:Vector, reflection: bool) -> Color 
-    {
-		let material = self.get_material(hit);
-		if reflection && material.reflection_enabled 
-        {
-			let fresnel = Self::calc_fresnel(hit.pos, origin, hit.normal, material.ior);
-            let ray = Self::create_reflection_ray(origin, hit.pos, hit.normal);
-            let hit_opt = self.cast_ray(&ray);
-
-			let reflect = match hit_opt {
-				Some(new_hit) => {self.approximate_color(&new_hit, hit.pos, false)},
-				None 		=> {self.settings.environment}
-			};
-			let surface = self.calculate_brdf(&hit, origin) * (1. - fresnel);
-			return reflect + surface
-		}
-		self.calculate_brdf(hit, origin)
-	}
-
-
-
-
-/*
-	pub fn render(&self, x: i32, y: i32) -> (u8,u8,u8) {
-		//let r = self.ray_from_pixel(x as f32,y as f32);
-		//self.cast_primary_ray(&r).to_0_255()
-        self.super_sample_fixed_rate(x as f32, y as f32).to_0_255()
-        //self.super_sample_bokeh(x as f32,y as f32).to_0_255()
-	}
-*/
 	
-	// shift a f32 sample randomly by (0-1)
-	/*
-	pub fn jitter(base:f32) -> f32 {
-		let shift = rand::random::<f32>();
-		(base+shift).fract()
-	}
-	*/
 
 
 	pub fn super_sample_fixed_rate(&self, x: u32, y:u32, samples:u32) -> Color {
+		let mut rng = rand::rng(); 	// -> ThreadRng
 		let mut out = Color::black();
-		for _ in 0..samples {
-			let mut ray = self.ray_from_pixel(x as f32 + rand::random::<f32>(),y as f32 + rand::random::<f32>());
-			let c = self.cast_primary_ray(&ray);
+		for s in 0..samples
+		{
+			let halton = Vec2::halton_sample(s as i32);
+			let mut ray = self.ray_from_pixel(x as f32 + halton.x ,y as f32 + halton.y);
+			let c = self.cast_primary_ray(&ray, &mut rng);
 			out += c;
 		}
 		out / samples as f32
 	}
 
-/*
-	pub fn super_sample_bokeh(&self, x: u32, y:u32, sample_count:u32) -> Color {
-		let focal_dist = 40.0;
-		let mut out = Color::black();
-		let r = 1.2;
 
-		let up = self.camera.up;
-		let right = self.camera.dir.cross(up);
-
-		let old_dir = {
-			self.camera.calc_ray_direction(x as f32, y as f32)
+	pub fn super_sample_defocus(&self, x: u32, y:u32, sample_count:u32) -> Color {
+		
+		/*
+		let random_in_unit_disk = |i| {
+			let mut seed = i;
+			loop {
+			let mut v = Vec2::halton_sample(seed);
+			v = v * 2.0 - Vec2::new(1.0,1.0);
+			if v.length_squared() < 1.0 {return v}
+			else {seed += 1234;}
+			}
 		};
-		let focal_point = self.camera.get_pos() + old_dir * focal_dist;
+		*/
+		let random_in_unit_disk = |i| {
+			let s = Vec2::halton_sample(i);
+			let u = (s.x * TWO_PI ).cos();
+			let v = (s.x * TWO_PI ).sin();
+			Vec2::new(u,v) * s.y * 2.0
 
+		};
+				
 
-		for i in 0..sample_count {
-			let a = i as f32 + rand::random::<f32>();
-			let u = (a * TWO_PI / sample_count as f32 ).cos() * r;
-			let v = (a * TWO_PI / sample_count as f32 ).sin() * r;
+		
 
-			let origin = self.camera.get_pos() + right * u + up * v;
+		let mut out = Color::black();
+		let mut rng = rand::rng(); 	// -> ThreadRng
 
-			let dir = (focal_point - origin).norm();
-			let ray = Ray::from_direction(origin, dir);
+		for i in 0..sample_count
+		{
+			let o = rand::random::<i32>();
+			let sample_pos = random_in_unit_disk(o+i as i32);
+			let ray = self.camera.get_ray_defocus(x as f32, y as f32, sample_pos);
 
-			out += self.cast_primary_ray(&ray);
+			out += self.cast_primary_ray(&ray, &mut rng);
 		}
 		out / sample_count as f32
 	}
-*/
+
 
 
 
@@ -661,7 +705,7 @@ impl Renderer
 	// TODO move the beauty part in it's own function
 	// and clean up / rename all the indirect sampling functions
 
-	pub fn cast_primary_ray(&self, ray:&Ray) -> Color {
+	pub fn cast_primary_ray(&self, ray:&Ray, rng: &mut impl Rng) -> Color {
 		let hit_result = self.cast_ray(ray);
 		match hit_result {
 			None      => self.sample_environment(ray.dir),
@@ -669,11 +713,13 @@ impl Renderer
 				match self.settings.render_mode{
 					RenderMode::Debug_Normals           => hit.normal.normal_to_color(),
 					RenderMode::Debug_UVs               => hit.uv.to_color(),
-					RenderMode::Debug_IrradianceMap     => self.ir_read(hit.pos),
+					RenderMode::Debug_IrradianceMap     => self.ir_read(hit.pos,hit.normal),
 					RenderMode::Debug_IrradianceMap_Samples   => self.ir_render_samples(&hit), 
-					RenderMode::Debug_GI                => self.calc_gi(&hit),
-					RenderMode::Beauty 					=> self.calc_principled_shading(&hit),
+					RenderMode::Debug_GI                => self.debug_gi(&hit),
+					RenderMode::Debug_Raw_GI 			=> self.calc_gi(&hit,8,24),
+					RenderMode::Beauty 					=> self.calc_principled_shading(&hit, rng),
 					RenderMode::Debug_Reflections 		=> self.debug_raw_reflections(&hit),
+					RenderMode::Debug_Focus 		    => self.debug_focus(&hit),
 				}
 			}
 		}
@@ -691,28 +737,37 @@ impl Renderer
 		f.clamp(0.0, 1.0)
 	}
 	
-
-	pub fn debug_raw_reflections(&self, hit:&Hitresult) -> Color{
+	fn debug_gi(&self, hit:&Hitresult) -> Color{
 		let material = self.get_material(hit);
-		if material.reflection_enabled
-		{
-			let fresnel = Self::calc_fresnel(hit.pos, self.camera.get_pos(), hit.normal, material.ior);
-			let reflect = self.calc_reflection(material, hit.normal, hit.pos, hit.origin_pos, 0);
-			return reflect;
-		} else{return Color::black();}
+		self.calc_gi(&hit,8,24) * material.color
 	}
 
-	pub fn calc_principled_shading(&self, hit:&Hitresult) -> Color
-	{
-		//let view = hit.pos - self.camera.pos;
-		//let reflect = Vector::calc_reflect_vector(view, hit.normal);
-		//return reflect.to_color();
-		//return hit.normal.random_hemispherical().normal_to_color();
-		//return self.calculate_environment_lighting(&hit,24);
+	fn debug_focus(&self, hit:&Hitresult) -> Color{
+		let dist = hit.pos.dist(hit.origin_pos);
+		let x = self.camera.focus_dist - dist;
+		if x.abs() < 0.1 {return Color::new(0.0,1.0,0.0);}
+		if (x>0.0) {Color::new(1.0,0.0,0.0)}
+		else {Color::new(0.0,0.0,1.0)}
+		
+	}
+
+	fn debug_raw_reflections(&self, hit:&Hitresult) -> Color{
 		let material = self.get_material(hit);
-		let mut surface = self.calculate_brdf(&hit, hit.origin_pos);
-		let env = self.calculate_environment_lighting(&hit,24);
-		surface += env * material.color;
+		//if material.reflection_enabled
+		//{
+			//let fresnel = Self::calc_fresnel(hit.pos, self.camera.get_pos(), hit.normal, material.ior);
+			let reflect = self.calc_reflection(material, hit.normal, hit.pos, hit.origin_pos, 0);
+			return reflect;
+		//} else{return Color::black();}
+	}
+
+
+
+
+	pub fn calc_principled_shading(&self, hit:&Hitresult, rng: &mut impl Rng) -> Color
+	{
+		let material = self.get_material(hit);
+		let mut surface = self.calculate_diffuse(&hit,64);
 
 		let mut out = if material.reflection_enabled {
 			let fresnel = Self::calc_fresnel(hit.pos, hit.origin_pos, hit.normal, material.ior);
@@ -721,10 +776,39 @@ impl Renderer
 		} else{
 			surface
 		}; 
-		if self.settings.gi_enabled {out = out + self.calc_gi(&hit) * material.color;} 
-
-		out
+		if self.settings.gi_enabled {out = out + self.calc_gi(&hit,8,32) * material.color;} 
+		out.clamp(5.0)
 	}
+
+
+	// cheaper function for secondary rays - reflections and refractions
+	pub fn calc_secondary_shading(&self, hit:&Hitresult) -> Color
+	{
+		let gi_clamp = 2.0;
+		let material = self.get_material(hit);
+		let mut out = self.calculate_diffuse(&hit,8);
+		/*
+		let mut out = if material.reflection_enabled {
+			let fresnel = Self::calc_fresnel(hit.pos, hit.origin_pos, hit.normal, material.ior);
+			let reflect = self.calc_reflection(material, hit.normal, hit.pos, hit.origin_pos, 0);
+			(surface * (1.0 - fresnel)) + (reflect * fresnel)
+		} else{
+			surface
+		}; 
+		*/
+		//if self.settings.gi_enabled {out = out + self.calc_gi(&hit,4,4).clamp(gi_clamp) * material.color;} 
+		if self.settings.gi_enabled {out = out + self.ir_read(hit.pos,hit.normal).clamp(gi_clamp);}
+		out.clamp(5.0)
+	}
+
+
+
+
+
+
+
+
+
 
 
 	pub fn check_shadow(&self, pos:Vector, light:&Light) -> bool {
@@ -757,25 +841,26 @@ impl Renderer
 
 	// sample the current environment from vector
     fn sample_environment(&self, r: Vector) -> Color {
-
-        //return Color::new(0.2,0.3,0.6).interpolate(Color::new(0.4,0.3,0.2), r.y);
-
-        if let Some(hdri) = &self.settings.environment_map 
-        {
-            let mut xz = r.clone();
-            xz.y = 0.0;
-            xz = xz.norm();
-            let u = (xz.x/xz.z).atan() / TWO_PI + 0.5;
-            let v = r.y / 2.5 + 0.5;
-
-            return hdri.get_pixel(u,1.0 - v);
-        }
-        else {self.settings.environment}
-    }
+		if let Some(hdri) = &self.settings.environment_map {
+			let r = r.norm();
+			let u = (r.x.atan2(r.z) / TWO_PI + 0.5 + self.settings.environment_map_rotation).fract();
+			let v =  (r.y.acos() / PI); 
+			return hdri.get_pixel(u, v) * self.settings.environment_map_multiplier;
+		} else {
+			self.settings.environment
+		}
+	}
 
 
 
-    pub fn calculate_environment_lighting(&self, hit:&Hitresult, samples:u16) -> Color
+
+
+
+	// raw environment light
+	// not multiplied by albedo
+
+	// use cosine
+    pub fn _calculate_environment_lighting(&self, hit:&Hitresult, samples:u16) -> Color
     {
         let mut out = Color::black();
 		let mut rng = rand::rng();
@@ -795,9 +880,42 @@ impl Renderer
         out/samples as f32
     }
 
+	// use cdf
+    pub fn calculate_environment_lighting(&self, hit: &Hitresult, samples: u16) -> Color
+	{
+		if samples == 0 {
+			return Color::black();
+		}
+
+		let mut out = Color::black();
+		let mut rng = rand::rng();
+
+		if let (Some(cdf), Some(env)) = (
+			&self.environment_cdf,
+			&self.settings.environment_map,
+		) {
+			for _ in 0..samples {
+				let sample = cdf.sample(env, self.settings.environment_map_rotation, &mut rng);
+				let cos_theta = hit.normal.dot(sample.direction).max(0.0);
+
+				if cos_theta <= 0.0 || sample.pdf <= 0.0 {
+					continue;
+				}
+				let ray = Ray::biased_from_direction(hit.pos, sample.direction);
+				if self.cast_ray(&ray).is_some() {
+					continue;
+				}
+				out += sample.radiance
+					* (cos_theta / (PI * sample.pdf)) * self.settings.environment_map_multiplier;
+			}
+		}
+		out / samples as f32
+	}
 
 
 
+
+	//ggx
 
 	// return the sample direction vector 
 	// and the PDF
@@ -837,29 +955,25 @@ impl Renderer
 		(L,pdf)
 	}
 
-
-
-
-
-
+	
 	pub fn calc_reflection(&self, material:&Material, normal:Vector, current_pos: Vector, origin:Vector, level:usize) -> Color 
     {
 		let roughness = material.roughness;
-		if level > 2 {return Color::black();}
+		if level > 2 {return Color::red();}
 		
 		if roughness == 0.0 
         {
             let ray = Self::create_reflection_ray(origin, current_pos,normal);
             let new_hit = self.cast_ray(&ray);
 			match new_hit {
-				Some(new_hit) => {return self.calculate_brdf(&new_hit, current_pos);},
+				Some(new_hit) => {return self.calc_secondary_shading(&new_hit);},
 				None 		=>   {return self.sample_environment(ray.dir);}
 			}
 		} 
 		
         else 
 		{
-			let samples = 64;
+			let samples = 16;
 			let mut accum = Color::black();
 			for i in 0..samples
 			{
@@ -881,7 +995,7 @@ impl Renderer
 					None =>
 						{accum = accum + self.sample_environment(ray.dir);}
 					Some(new_hit) => {
-						let surface = self.calculate_brdf(&new_hit, current_pos);
+						let surface = self.calc_secondary_shading(&new_hit);
 						accum = accum + surface;
 					},
 				}
@@ -909,14 +1023,8 @@ impl Renderer
 
 	// returns the raw indirect illumination
 	// NOT yet multiplied by surface color
-	// how does this work with irm tho?
 	
-	pub fn calc_gi(&self, hit:&Hitresult) -> Color {
-		let material = self.get_material(hit);
-		if !self.reads_gi(material) {return Color::black()}
-		self.gi_brute_force2(hit, 0)
-	}
-	
+
 
 /*
 	// unused atm
@@ -952,35 +1060,39 @@ impl Renderer
 */
 
 
-	pub fn gi_brute_force2(&self, hit:&Hitresult, _:i32) -> Color {
-		let min = 4;
-		let max = 32;
-		let threshold = 0.1;
+	pub fn calc_gi(&self, hit:&Hitresult, min_samples:usize, max_samples:usize) -> Color {
+		let threshold = 0.05;
 		let mut rng = rand::rng();
 
 		let mut accum = Color::black();
-		let mut samples:Vec<Color> = Vec::with_capacity(max);
-		for i in 0..max {
+		let mut samples:Vec<Color> = Vec::with_capacity(max_samples);
+
+		for i in 0..max_samples {
             let direction = Vector::cosine_sample_hemisphere(hit.normal, &mut rng);
             let ray = Ray::biased_from_direction(hit.pos, direction);
 			if let Some(new_hit) = self.cast_ray(&ray) 
             {
 				let dist = new_hit.pos.dist(hit.pos);
-				let _falloff = 1. / (dist * 0.1).max(1.);
-				let color = self.ir_read(new_hit.pos) * _falloff;
+				let falloff = Self::calculate_falloff(dist);
+				let color = (self.ir_read(new_hit.pos,new_hit.normal) * falloff).clamp(3.0); // clamp gi after weighting
 
 				accum = accum + color;
+				
+				
 				samples.push(color);
-				if i >= min {
+				// check if our variance is good enough to exit early
+				if i >= min_samples {
 					let mean = accum / (i+1) as f32;
 					let v = Renderer::sample_variance(&samples, mean);
 					if v < threshold { return mean;}
 				}
+				
+				
 			}
 		}
 		// no threshold reached
 		// used all max samples
-		accum  / max as f32
+		accum  / max_samples as f32
 	}
 
 	pub fn sample_variance(samples:&Vec<Color>, mean:Color) -> f32 {
@@ -1023,17 +1135,29 @@ impl Renderer
     pub fn render_frame(&self) -> FrameBuffer
     {
 	    let mut fb = FrameBuffer::new(self.image_size.0, self.image_size.1);
-		
-		fb.pixels
-		.par_iter_mut()
-		.enumerate()
-		.for_each( |(index,color)| {
-			let (x,y) = self.index_to_xy(index);
-			*color = self.super_sample_fixed_rate(x, y, 1);
-			//*color = self.super_sample_bokeh(x, y, 1);
-		});
+		if self.settings.dof_enabled {
+			fb.pixels
+			.par_iter_mut()
+			.enumerate()
+			.for_each( |(index,color)| {
+				let (x,y) = self.index_to_xy(index);
+				*color = self.super_sample_defocus(x, y, 2);
+			});
+		}
+		else {
+			fb.pixels
+			.par_iter_mut()
+			.enumerate()
+			.for_each( |(index,color)| {
+				let (x,y) = self.index_to_xy(index);
+				*color = self.super_sample_fixed_rate(x, y, 1);
+			});
+		}
 		fb
     }
+
+
+
 
 
 
@@ -1047,10 +1171,12 @@ impl Renderer
 	    thread::spawn(move || {
 
 	    	let mut master_framebuffer = FrameBuffer::new(renderer.image_size.0, renderer.image_size.1);
-			let mut counter = 1u32;
+			let mut iteration_counter = 1u32;
 			
 			loop 
 			{
+				master_framebuffer.write_exr();	
+				println!("iteration {iteration_counter}");
 	        	let samples = renderer.render_frame();
 				master_framebuffer.add_buffer(&samples);
 				let image = master_framebuffer.to_image();
@@ -1058,6 +1184,7 @@ impl Renderer
 				{
 					return;
 				}
+				iteration_counter+=1;
 			}
 	    });
 	    rx

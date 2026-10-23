@@ -7,7 +7,9 @@ pub struct Camera {
 		pub sensor_width: f32,
 		pub ratio: f32,
         pub image_width: u32,
-        pub image_height: u32
+        pub image_height: u32,
+		pub focus_dist: f32,
+		pub aperture_radius: f32,
 	}
 	impl fmt::Debug for Camera {
 	    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -25,10 +27,13 @@ pub struct Camera {
 				sensor_width: 36.0, 
 				ratio,
 				image_width,
-				image_height
+				image_height,
+				focus_dist: 10.0,
+				aperture_radius: 0.1,
 			} 
 		}
 
+		// todo could also just return a ray...
 		pub fn calc_ray_direction(&self, pixel_x: f32, pixel_y: f32) -> Vector {
 			let half_w = self.sensor_width * 0.5;
 			let half_h = (self.sensor_width / self.ratio) * 0.5;
@@ -43,6 +48,41 @@ pub struct Camera {
 			);
 			self.transform.multiply_vector(local_pixel_pos)
 		}
+
+		pub fn get_ray_defocus(&self, pixel_x: f32, pixel_y: f32, lens_sample: Vec2,) -> Ray 
+		{
+			let half_w = self.sensor_width * 0.5;
+			let half_h = (self.sensor_width / self.ratio) * 0.5;
+
+			let s = pixel_x / self.image_width as f32 - 0.5;
+			let t = 0.5 - pixel_y / self.image_height as f32;
+
+			let scale = self.focus_dist / self.focal_length;
+
+			let focal_point = Vector::new(
+				s * 2.0 * half_w * scale,
+				t * 2.0 * half_h * scale,
+				-self.focus_dist, // at the focal distance down -z
+			);
+
+			let lens_origin = Vector::new(
+				lens_sample.x * self.aperture_radius,
+				lens_sample.y * self.aperture_radius,
+				0.0,
+			);
+
+			let origin = self.transform.multiply_point(lens_origin);
+			let target = self.transform.multiply_point(focal_point);
+
+			Ray::from_direction(origin,(target - origin).norm())
+		}
+		
+
+
+
+
+
+
 
 
 		pub fn from_blender_transform(&mut self, values:&[[f32;4];4])

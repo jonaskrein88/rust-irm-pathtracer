@@ -49,6 +49,9 @@ impl Vector
     pub fn length(&self) -> f32 {
         f32::sqrt(self.x * self.x + self.y * self.y + self.z * self.z)
     }
+    pub fn length_squared(&self) -> f32 {
+        self.x * self.x + self.y * self.y + self.z * self.z
+    }
     pub fn dist(self, v:Vector) -> f32 {
         self.sub(v).length()
     }
@@ -263,6 +266,15 @@ impl Vec2 {
         Vec2{x:0.0, y:0.0}
     }
     pub fn to_color(&self) -> Color {Color::new(self.x % 1.0, self.y % 1.0, 0.0)}
+    
+    pub fn length(&self) -> f32 {
+        f32::sqrt(self.x * self.x + self.y * self.y)
+    }
+
+    pub fn length_squared(&self) -> f32 {
+        self.x * self.x + self.y * self.y
+    }
+    
     
     pub fn jitter(self) -> Self
     {

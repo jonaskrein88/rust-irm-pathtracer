@@ -1,0 +1,61 @@
+environment_map="1103 Sun Clouds.exr"
+environment_rotation = -0.8
+environment_strength = 0.15
+
+#gi_enabled=false
+
+#render_mode="irradiance_map"
+#render_mode="gi"
+#render_mode="reflections"
+#render_mode="focus"
+
+
+#dof_enabled=true
+
+
+[camera]
+image_size = [800,800]
+focal_length = 40.0
+focus_dist = 5.25
+aperture_radius = 0.125
+blender_cam = "<Matrix 4x4 ( 0.9817,  0.0223,  0.1890,  1.8802)( 0.1903, -0.1150, -0.9750, -4.9569)(-0.0000,  0.9931, -0.1171,  1.0112)( 0.0000,  0.0000,  0.0000,  1.0000)>"
+
+
+
+
+
+[[materials]]
+name="white"
+color = [1.0,1.0,1.0]
+reflection_enabled = true
+ior = 1.4
+roughness = 0.4
+
+[[materials]]
+name="floor"
+color = [0.25,0.25,0.25]
+reflection_enabled = true
+ior = 1.4
+roughness = 0.05
+
+[[materials]]
+name="red"
+color = [1.0, 0.0, 0.0]
+reflection_enabled = true
+roughness = 0.1
+ior = 2.0
+
+[[materials]]
+name="brown"
+color = [0.1, 0.025, 0.0]
+reflection_enabled = true
+roughness = 0.1
+ior = 1.6
+
+
+
+
+[[objects]]
+file = "roundroom_00.obj"
+materials = ["white","brown","brown"]
+

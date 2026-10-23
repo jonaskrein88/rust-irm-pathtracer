@@ -205,7 +205,7 @@ impl BHShape<f32, 3> for BvhTriangle {
 						None => continue,
 						Some((pos,..)) => {
 							let dist = (ray.origin - pos).length();
-							if dist < best_dist {
+							if dist > 1e-4 && dist < best_dist {
 								best_dist = dist;
 								best_hit = hit;
 							}
@@ -392,7 +392,7 @@ impl BHShape<f32, 3> for BvhTriangle {
 					None => continue,
 					Some((pos,..)) => {
 						let dist = (ray.origin - pos).length();
-						if dist < best_dist {
+						if dist > 1e-4 && dist < best_dist {
 							best_dist = dist;
 							best_hit = hit;
 						}
@@ -414,16 +414,20 @@ impl BHShape<f32, 3> for BvhTriangle {
 		}
 		
 		// returns Option ( position, Face, Barycentic)
-		fn calculate_hit<'a>(&self, ray: &Ray, f:&'a Face, n:&Vector) -> Option<(Vector, &'a Face, f32,f32,f32)> {
-			if n.dot(ray.dir) > 0. { return None;}
+		fn calculate_hit<'a>(&self, ray: &Ray, f:&'a Face, n:&Vector) -> Option<(Vector, &'a Face, f32,f32,f32)> 
+		{
+			if n.dot(ray.dir) > 0.0 { return None;}
 			// Möller-Trumbore
+			let det_epsilon = 1e-8;
+			let t_epsilon   = 1e-5;
+
 			let p = self.get_positions(f);
-			let k_epsilon = 0.001;
+			//let k_epsilon = 0.001;
 			let v0v1 = p.1 - p.0;
 			let v0v2 = p.2 - p.0;
 			let pvec = ray.dir.cross(v0v2); 
 			let det = v0v1.dot(pvec);
-			if det < k_epsilon {return None}; 
+			if det < det_epsilon {return None}; 
 			let inv_det = 1. / det;
 			let tvec = ray.origin - p.0;
 			let u = tvec.dot(pvec) * inv_det;
@@ -432,8 +436,8 @@ impl BHShape<f32, 3> for BvhTriangle {
 			let v = ray.dir.dot(qvec) * inv_det;
 			if v < 0. || u + v > 1. { return None;}
 			let t = v0v2.dot(qvec) * inv_det;
-            if t < 0.0 {return None;}
-			let hit_pos = ray.origin + ray.dir.norm() * t;
+            if t < t_epsilon {return None;}
+			let hit_pos = ray.origin + ray.dir * t;
 			let w = 1. - u - v;
 			Some((hit_pos, f, u,v,w))
 			//let normal = Vector::new(0.,1.,0.);
@@ -679,7 +683,10 @@ impl BHShape<f32, 3> for BvhTriangle {
 
 
 // obj parser
-
+// TODO pack into module
+pub mod OBJ_Importer
+{
+	use super::*;
 
     fn parse_row((_,s):(usize,&str),
 		verts:&mut Vec<Vector>,
@@ -835,3 +842,4 @@ impl BHShape<f32, 3> for BvhTriangle {
 		}
 	    Some(m)
     }
+}

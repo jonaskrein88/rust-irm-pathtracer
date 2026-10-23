@@ -1,5 +1,6 @@
 use super::*;
 use color::*;
+use exr::prelude::write_rgba_file;
 
 pub struct FrameBuffer {
     pub width: u32,
@@ -62,6 +63,12 @@ impl FrameBuffer
 	        self.num_samples[i] += 1;
 	    }
 	}
+    pub fn get(&self, x:u32, y:u32) -> Color
+    {
+        let index = self.xy_to_index(x,y);
+        self.pixels[index]
+    }
+
     pub fn to_image(&self) -> image::RgbaImage 
     {
     	let mut img = image::RgbaImage::new(self.width, self.height);
@@ -76,6 +83,16 @@ impl FrameBuffer
         }
         img
     }
+    pub fn write_exr(&self)
+    {
+	    write_rgba_file("out.exr",self.width as usize,self.height as usize, |x, y| 
+        {
+				let c = self.get(x as u32, y as u32);
+				(c.r, c.g, c.b, 1.0)
+			},
+		)
+		.unwrap();
+	}
 
 
 
