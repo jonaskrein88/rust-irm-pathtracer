@@ -64,6 +64,9 @@ impl Color
         Self::new(self.r.min(v), self.g.min(v), self.b.min(v))
 
     }
+    pub fn invert(&self) -> Color {
+        Self::new(1.0 - self.r, 1.0 - self.g, 1.0-self.b)
+    }
 }
 
 

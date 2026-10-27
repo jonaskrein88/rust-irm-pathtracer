@@ -25,6 +25,7 @@ pub struct Vector {
 impl Vector 
 {	
     pub fn empty() -> Vector { Vector{x: 0., y:0., z:0.}}
+    pub fn zero() -> Vector { Vector{x: 0., y:0., z:0.}}
 
     pub fn new(x: f32, y: f32 ,z : f32) -> Vector {Vector{x, y, z}}
 
@@ -85,8 +86,8 @@ impl Vector
     pub fn to_color(&self) -> Color {
         Color::new(self.x, self.y, self.z)
     }
-    pub fn to_array(&self) -> [f64; 3] {
-        [self.x as f64, self.y as f64, self.z as f64]
+    pub fn to_array(&self) -> [f32; 3] {
+        [self.x, self.y, self.z]
     }
     pub fn normal_to_color(&self) -> Color {
         let r = self.x / 2.0 + 0.5;
@@ -273,6 +274,9 @@ impl Vec2 {
 
     pub fn length_squared(&self) -> f32 {
         self.x * self.x + self.y * self.y
+    }
+    pub fn fract(&self) -> Self {
+        Vec2::new(self.x.fract(), self.y.fract())
     }
     
     

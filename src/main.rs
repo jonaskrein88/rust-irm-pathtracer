@@ -1,17 +1,13 @@
 mod renderer;
 use renderer::*;
-//use renderer::color::Color;
-//use std::sync::{Mutex,Arc};
-//use std::{time,thread};
-//use std::sync::mpsc;
-//use rand::Rng;
-//use chrono;
-
+use std::env;
 
 
 fn main() {
-    let mut re = Renderer::new(1200, 720);
-    re.create_demo_scene();
+    let args: Vec<String> = env::args().collect(); 
+    let re = Renderer::new().
+        import_scene(&args[1]);
+
     re.start_render();
 }
 

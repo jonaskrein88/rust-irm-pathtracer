@@ -11,6 +11,7 @@ use super::*;
 
 
 pub struct Texture {
+    pub name: String,
     pixels: Vec<Vec<Color>>,
     width: usize,
     height: usize,
@@ -19,14 +20,17 @@ pub struct Texture {
 impl Texture 
 {
     pub fn open(filename: &str) -> Texture {
-        let img = image::open(filename).unwrap(); 
-        Texture::from_image(img)
+        if let Ok(img) = image::open(filename) {Texture::from_image(img)}
+        else {
+            panic!("Could not open image {filename}");
+        }
     }
 
     fn new(pixels: Vec<Vec<Color>>) -> Texture {
         let height = pixels.len();
         let width = pixels[0].len(); 
-        Texture{pixels,width,height}
+        let name = String::new();
+        Texture{pixels,width,height,name}
     }
     fn get(&self, x:usize,y:usize) -> Color {
         self.pixels[y][x]
@@ -80,9 +84,11 @@ impl Texture
          Texture::new(out)
     }
 
-    pub fn get_pixel(&self, u:f32, v:f32)-> Color {
-        let mut x = (u * self.width as f32) as usize;
-        let mut y = (v * self.height as f32) as usize;
+    pub fn sample(&self, u:f32, v:f32)-> Color { 
+        let wrapped_u = u - u.floor();
+        let wrapped_v = v - v.floor();
+        let mut x = (wrapped_u * self.width as f32) as usize;
+        let mut y = (wrapped_v * self.height as f32) as usize;
         
         
         x = std::cmp::max(x,0);
@@ -160,53 +166,49 @@ impl EnvironmentCdf
         (x, y)
     }
 
-    pub fn sample<R: Rng>(&self, texture: &Texture, rotation:f32, rng: &mut R) -> EnvironmentSample
-    {
-        let r: f32 = rng.gen();
-        let index = self.cdf.partition_point(|&v| v < r)
-            .min(self.cdf.len() - 1);
+    pub fn sample<R: Rng>(&self, texture: &Texture, rotation: f32, rng: &mut R) -> EnvironmentSample 
+{
+    let r: f32 = rng.gen();
+    let index = self.cdf.partition_point(|&v| v < r).min(self.cdf.len() - 1);
 
-        let x = index % self.width;
-        let y = index / self.width;
+    let x = index % self.width;
+    let y = index / self.width;
 
-        // random sample within that texel.
-        let u = (x as f32 + rng.gen::<f32>()) / self.width as f32;
-        let v = (y as f32 + rng.gen::<f32>()) / self.height as f32;
+    // 1. Get continuous UV coordinates within the chosen texel
+    let u = (x as f32 + rng.gen::<f32>()) / self.width as f32;
+    let v = (y as f32 + rng.gen::<f32>()) / self.height as f32;
 
-        // convert UV to a world-space direction.
-        let phi = 2.0 * PI * u;
-        let theta = PI * v;
+    // 2. Convert UV to angles, applying the 0.0-1.0 rotation offset to Phi
+    let theta = std::f32::consts::PI * v;
+    // rem_euclid ensures the value stays safely between 0.0 and 1.0
+    let phi = 2.0 * std::f32::consts::PI * ((u - rotation).rem_euclid(1.0));
 
-        let theta = PI * v;
-        let phi = TWO_PI * (u - 0.5 - rotation);
-        let direction = Vector::new(
-            theta.sin() * phi.sin(),
-            theta.cos(),
-            theta.sin() * phi.cos(),
-        );
+    // 3. Convert angles to world-space direction
+    let direction = Vector::new(
+        -theta.sin() * phi.sin(),
+        theta.cos(),
+        theta.sin() * phi.cos(),
+    );
 
-        let radiance = texture.get(x,y);
+    // 4. Look up radiance (Must match the un-rotated texel index we chose!)
+    let radiance = texture.get(x, y);
 
-        // convert texel probability to PDF
-        let previous = if index == 0 {
-    0.0
-} else {
-    self.cdf[index - 1]
-};
+    // 5. Calculate PDF based on the selected texel
+    let previous = if index == 0 { 0.0 } else { self.cdf[index - 1] };
+    let texel_probability = self.cdf[index] - previous;
 
-let texel_probability = self.cdf[index] - previous;
+    let theta0 = std::f32::consts::PI * y as f32 / self.height as f32;
+    let theta1 = std::f32::consts::PI * (y + 1) as f32 / self.height as f32;
 
-let theta0 = PI * y as f32 / self.height as f32;
-let theta1 = PI * (y + 1) as f32 / self.height as f32;
+    let solid_angle = (2.0 * std::f32::consts::PI / self.width as f32) * (theta0.cos() - theta1.cos());
+    let pdf = texel_probability / solid_angle;
 
-let solid_angle =
-    (2.0 * PI / self.width as f32)
-    * (theta0.cos() - theta1.cos());
+    EnvironmentSample { direction, radiance, pdf }
+}
 
-let pdf = texel_probability / solid_angle;
 
-        EnvironmentSample {direction,radiance,pdf}
-    }
+
+
 }
 
 
@@ -223,42 +225,48 @@ let pdf = texel_probability / solid_angle;
 
 
 
-pub enum BRDF {
-    Lambert, 
-    OrenNayar,
-    Blinn, 
-    Phong,
-    Constant,
-    None,
+pub enum ShaderType {
+    Lit,
+    Unlit,
+    Emissive,
 }
 
 pub struct Material {
     pub name  : String,
     pub color : Color,
-    pub diffuse: BRDF,
+    pub shader_type: ShaderType,
     pub reflection_color: Color,
     pub reflection_enabled: bool,
     pub refraction_enabled: bool,
     pub illum: f32,
     pub roughness: f32,
     pub ior: f32,
-    pub texmap_diffuse: Option<Texture>,
-    pub texmap_normal: Option<Texture>,
+    pub normal_strength: f32,
+    pub texture_diffuse: Option<usize>,
+    pub texture_normals: Option<usize>,
+    pub texture_roughness: Option<usize>,
+    pub texture_roughness_strength: f32,
+    pub invert_roughness_map: bool,
 }
 
 impl Material {
     pub fn new() -> Material { Material {
         name:String::new(),
-        color:Color::light_grey(), 
-        diffuse:BRDF::Lambert, 
+        color:Color::white(),
+        shader_type: ShaderType::Lit,
         reflection_enabled:false,
         refraction_enabled:false,
         reflection_color: Color::white(),
         roughness: 0.0, 
         ior: 1.4,
         illum: 0.0,
-        texmap_diffuse: None,
-        texmap_normal: None, }
+        normal_strength: 1.0,
+        texture_diffuse: None,
+        texture_normals: None,
+        texture_roughness: None,
+        texture_roughness_strength: 1.0,
+        invert_roughness_map: false,
+        }
     }
 
     pub fn set_color(mut self, color:Color) -> Self {
@@ -281,18 +289,22 @@ impl Material {
        self.name = name.to_string();
        self 
     }
-
-
-
-
-    
-    
-    pub fn new_light_material() -> Material {
-        let mut m = Material::new();
-        m.diffuse = BRDF::Constant;
-        m.reflection_enabled = false;
-        m
+    pub fn set_texture_diffuse(mut self, texture:usize) -> Self {
+       self.texture_diffuse = Some(texture);
+       self 
     }
+    pub fn set_texture_normals(mut self, texture:usize) -> Self {
+       self.texture_normals = Some(texture);
+       self 
+    }
+    pub fn set_texture_roughness(mut self, texture:usize) -> Self {
+       self.texture_roughness = Some(texture);
+       self 
+    }
+
+
+
+
     
     fn calc_lambert(&self, pos: Vector, normal: Vector, light: &Light) -> f32 {
         let ldir = light.pos - pos;
@@ -301,25 +313,68 @@ impl Material {
         let dot = n.dot(l);
         dot.max(0.0)
     } 
-    fn calc_oren_nayar(&self, pos:Vector, normal:Vector, light:&Light, origin:Vector) -> f32 {
-        let roughness = 1.0; 	//0:smooth --> 1:matte
-        let albedo = 0.5;
-        let ldir = (light.pos - pos).norm();
-        let view_dir = (origin - pos).norm();
-        let lv = ldir.dot(view_dir);
-        let nl = normal.dot(ldir);
-        let nv = normal.dot(view_dir);
-        let s = lv * nl * nv;
-        let step = if s < 0.0 {1.0} else {0.0};
-        let t = step * nl.max(nv) + (1.0 - step) * 1.0;
-        let sigma = roughness * roughness;
-        let a = 1.0 + sigma * (albedo / (sigma + 0.13) + 0.5 / (sigma + 0.33));
-        let b = 0.45 * sigma / (sigma + 0.09);
-        albedo * nl.max(0.0) * (a + b * s / t) / PI
+    
+
+
+    pub fn get_albedo(&self, renderer: &Renderer, uv:Vec2) -> Color
+    {
+        match self.texture_diffuse
+        {
+            Some(tex_id) 	=> renderer.get_texture(tex_id).sample(uv.x,uv.y) * self.color,
+            _ 				=> self.color,
+        }
     }
+
+    pub fn get_roughness(&self, renderer: &Renderer, uv:Vec2) -> f32
+    {
+        match self.texture_roughness
+        {
+            None => self.roughness,
+            Some(_) if self.texture_roughness_strength == 0.0 => self.roughness,
+            Some(tex_id) => {
+                let mut x = renderer.get_texture(tex_id).sample(uv.x,uv.y).r.powf(0.4545);
+                x = if self.invert_roughness_map {1.0 - x} else {x};
+                x * self.texture_roughness_strength + (1.0 - self.texture_roughness_strength) * self.roughness
+            },
+        }
+    }
+ 
     
+
+    pub fn apply_normal_map(&self, renderer: &Renderer, tan: Vector, normal: Vector, uv: Vec2, intensity:f32) -> Vector
+    {
+        match self.texture_normals
+        {
+            None => normal,
+            Some(tex_id) => {
+                let texel = renderer.get_texture(tex_id).sample(uv.x, uv.y).pow(0.4545).to_vector();
+                
+                let mut n = Vector::new(
+                    texel.x * 2.0 - 1.0,
+                    texel.y * 2.0 - 1.0,
+                    texel.z * 2.0 - 1.0,
+                );
+                //n = Vector::new(n.x, -n.y, n.z); // works for ... inverted gl??
+                //n = Vector::new(n.x, n.z, n.y); 
+                n = Vector::new(n.x * intensity, n.y * intensity, n.z);
+
+                //let n = Vector::new(0.0, 0.0, 1.0); // hardcoded up vector for testing
+                //
+                let bitan = tan.cross(normal).norm(); 
+                let true_tan = normal.cross(bitan).norm();
+                // using explicit multiplication for testing
+                let transformed_normal = (true_tan * n.x) + (bitan * n.y) + (normal * n.z);
+
+                transformed_normal.norm()
+            }
+        }
+    }
+
     
-    pub fn calc_diffuse(&self, pos: Vector, mut normal: Vector, tan:Vector, light: &Light, origin:Vector, uv:Vec2) -> Color {
+    // calculate diffuse for point light
+    
+    pub fn calc_diffuse(&self, renderer: &Renderer, hit:&Hitresult, light:&Light) -> Color
+    {
 
 //        if let Some(ref map) = self.texmap_normal { 	// darboux frame
 //            let bitan = tan.cross(normal);
@@ -327,22 +382,9 @@ impl Material {
 //            let v = map.get_pixel(uv.x, uv.y).to_vector();
 //            normal = v.transform(&space);
 //        }
-//        let amount = match self.diffuse {
-//            BRDF::Lambert 	=> Material::calc_lambert(self,pos, normal, light),
-//            BRDF::OrenNayar => Material::calc_oren_nayar(self,pos, normal, light, origin),
-//            BRDF::Constant	=> 1.0,
-//            _ 				=> 0.0,
-//        };
-        if let BRDF::None = self.diffuse {return Color::black()}
-        let amount = Material::calc_lambert(self,pos, normal, light)* light.calc_falloff(pos);
-
-//
-//        let color = match self.texmap_diffuse {
-//                Some( ref tex) 	=> tex.get_pixel(uv.x,uv.y),
-//                _ 				=> self.color,
-//        };
-        let color = self.color;
-        color * amount * light.color
+        let amount = Material::calc_lambert(self, hit.pos, hit.normal, light)* light.calc_falloff(hit.pos);
+        light.color * amount
     }
+    
 
 }

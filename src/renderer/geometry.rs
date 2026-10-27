@@ -50,6 +50,9 @@ pub struct Face {
     uva:usize,
     uvb:usize,
     uvc:usize,
+	//tana:usize,
+	//tanb:usize,
+	//tanc:usize,
 	material_id:usize
 }
 
@@ -64,6 +67,7 @@ impl Face
 			a:verts.0, b:verts.1, c:verts.2,
 			uva:uvs.0, uvb:uvs.1, uvc:uvs.2,
 			na:normals.0, nb:normals.1, nc:normals.2,
+			//tana:0, tanb:0, tanc:0,
 			material_id:0
 		};
 		face
@@ -216,10 +220,10 @@ impl BHShape<f32, 3> for BvhTriangle {
 					None => return None,
 					Some((pos, f, u,v,w)) => {
 						let normal = self.interpolate_normal(f,(u,v,w));
-						//let uv = if self.has_uvs {self.interpolate_uv(f,(u,v,w))} else {Vec2::new(0.,0.)};
-						//let tangent = if self.has_uvs {self.interpolate_tangent(f,(u,v,w))} else {Vector::new(1.,0.,0.)};
-						let tangent = Vector::new(1.0,0.0,0.0);
-						let uv = Vec2::new(0.0,0.0);
+						let uv = self.interpolate_uv(f,(u,v,w));
+						let tangent = self.interpolate_tangent(f,(u,v,w));
+						//let tangent = Vector::new(1.0,0.0,0.0);
+						//let uv = Vec2::new(0.0,0.0);
 
 						return Some((pos, normal, uv, tangent, f.material_id))
 					},
@@ -230,71 +234,46 @@ impl BHShape<f32, 3> for BvhTriangle {
 		} 
 		
 
-
-
-
-
-		// run before rendering
-		// after all transformations
-		pub fn prepass(&mut self) {
-			self.pre_calculate_aabb();
-			self.pre_calculate_fnormals();
-			self.prepare_for_bvh();
+		// this is incorrect at the moment ant needs a rework
+		//////////////////////////////////////////////////////////////
+	
+		
+		// required for vertex tangent calculation
+		fn faces_from_point(&self, v:usize) -> Vec<usize> {
+			let mut out:Vec<usize> = Vec::new();
+			for i in 0..self.faces.len() {
+				let face = &self.faces[i];
+				if face.a == v || face.b == v || face.c == v { out.push(i);}
+			}
+			out
 		}
 
+		fn calculate_face_tangents(&self, f: &Face) -> Vector {
+			
+			let Points(v0, v1, v2) = self.get_positions(f);
+			let uv0 = self.uvs[f.uva];
+			let uv1 = self.uvs[f.uvb];
+			let uv2 = self.uvs[f.uvc];
+
+			let delta1 = v1 - v0;
+			let delta2 = v2 - v0;
+			let delta_uv_1 = uv1 - uv0;
+			let delta_uv_2 = uv2 - uv0;
+
+			let det = delta_uv_1.x * delta_uv_2.y - delta_uv_1.y * delta_uv_2.x;
+
+			if det.abs() < 1e-6 {
+				return Vector::zero();
+			}
+
+			let r = 1.0 / det;
+			(delta1 * delta_uv_2.y - delta2 * delta_uv_1.y) * r
+		}
 
 		/*
-		pub fn add_face(&mut self, face:Face) {self.faces.push(face);}
-
-		pub fn add_plane(&mut self) {
-			let v0 = Vector::new(50.,0.0, 50.);    
-			let v1 = Vector::new(50.,0.0, -50.);
-			let v2 = Vector::new(-50.,0.0, -50.);
-			let v3 = Vector::new(-50.,0.0, 50.);
-
-			let uv0 = self.add_uv(Vec2::new(0.,0.));
-			let uv1 = self.add_uv(Vec2::new(0.,1.));
-			let uv2 = self.add_uv(Vec2::new(1.,1.));
-			let uv3 = self.add_uv(Vec2::new(1.,0.));
-
-			let i0 = self.add_point(v0);
-			let i1 = self.add_point(v1);
-			let i2 = self.add_point(v2);
-			let i3 = self.add_point(v3);
-			let f1 = Face::new_with_uvs(i0,i1,i2, uv0, uv1, uv2);
-			let f2 = Face::new_with_uvs(i2,i3,i0, uv2, uv3, uv0);
-			self.add_face(f1);
-			self.add_face(f2);
-		}
-		fn add_point(&mut self, v:Vector) -> usize {
-			self.vertices.push(v);
-			self.vertices.len() - 1
-		}
-		fn add_uv(&mut self, uv:Vec2) -> usize {
-			self.uvs.push(uv);
-			self.uvs.len() - 1
-		}
-
-		pub fn transform_uvs(&mut self, s:f32, t:f32) {
-			for uv in &mut self.uvs {
-				uv.x = uv.x * s;
-				uv.y = uv.y * t;
-			}
-			//println!("\nuvs{:?}",self.uvs );
-		}
-
-		*/
-		/*
-		fn calculate_vertex_normals(&mut self) {
-			// normals
-			
-			for i in 0..self.vertices.len(){
-				let faces = self.faces_from_point(i);
-				let vnormal = self.vnormal_from_fnormals(faces);
-				self.vnormals.push(vnormal);
-			}
-			
-			// tangents
+		fn _pre_calculate_vtangents(&mut self)
+		{
+			println!("starting vtan calculation");
 			if self.ftangents.len() == 0 {return ();}
 			for i in 0..self.vertices.len(){
 				let faces = self.faces_from_point(i);
@@ -305,29 +284,38 @@ impl BHShape<f32, 3> for BvhTriangle {
 				}
 				self.vtangents.push(tangent.norm());
 			}
-		}
-		*/
-		/*
-		fn faces_from_point(&self, v:usize) -> Vec<usize> {
-			let mut out:Vec<usize> = Vec::new();
-			for i in 0..self.faces.len() {
-				let face = &self.faces[i];
-				if face.a == v || face.b == v || face.c == v { out.push(i);}
-			}
-			out
+			println!("done vtan calculation");
 		}
 		*/
 
-		/*
-		fn vnormal_from_fnormals(&self, face_ids:Vec<usize>) -> Vector {
-			let mut out_normal = Vector::empty();
-			for i in 0..face_ids.len() {
-				let fnormal = self.fnormals[face_ids[i]];
-				out_normal = out_normal + fnormal;
+		fn pre_calculate_vtangents(&mut self) {
+			if self.ftangents.is_empty() || self.faces.is_empty() { return; }
+
+			let mut accumulated = vec![Vector::empty(); self.vertices.len()];
+
+			for (face_idx, face) in self.faces.iter().enumerate() {
+				let ftangent = self.ftangents[face_idx];
+				accumulated[face.a] = accumulated[face.a] + ftangent;
+				accumulated[face.b] = accumulated[face.b] + ftangent;
+				accumulated[face.c] = accumulated[face.c] + ftangent;
 			}
-			out_normal.norm()
+			self.vtangents = accumulated
+				.into_iter()
+				.map(|v| v.norm())
+				.collect();
 		}
-		*/
+
+		//////////////////////////////////////////////////////////////
+
+
+		// run before rendering
+		// after all transformations
+		pub fn prepass(&mut self) {
+			self.pre_calculate_aabb();
+			self.pre_calculate_fnormals_and_ftangents();
+			self.pre_calculate_vtangents();
+			self.prepare_for_bvh();
+		}
 
 		pub fn transform(mut self, m:&Matrix) -> Self{
 			for v in &mut self.vertices {
@@ -403,10 +391,10 @@ impl BHShape<f32, 3> for BvhTriangle {
 				None => None,
 				Some((pos, f, u,v,w)) => {
 					let normal = self.interpolate_normal(f,(u,v,w));
-					//let uv = if self.has_uvs {self.interpolate_uv(f,(u,v,w))} else {Vec2::new(0.,0.)};
+					let uv = self.interpolate_uv(f,(u,v,w));
 					//let tangent = if self.has_uvs {self.interpolate_tangent(f,(u,v,w))} else {Vector::new(1.,0.,0.)};
                     let tangent = Vector::new(1.0,0.0,0.0);
-                    let uv = Vec2::new(0.0,0.0);
+                    //let uv = Vec2::new(0.0,0.0);
 
 					Some((pos, normal, uv, tangent, f.material_id))
 				},
@@ -416,7 +404,7 @@ impl BHShape<f32, 3> for BvhTriangle {
 		// returns Option ( position, Face, Barycentic)
 		fn calculate_hit<'a>(&self, ray: &Ray, f:&'a Face, n:&Vector) -> Option<(Vector, &'a Face, f32,f32,f32)> 
 		{
-			if n.dot(ray.dir) > 0.0 { return None;}
+			if n.dot(ray.dir) > 0.0 { return None;} // uncomment for backface culling
 			// Möller-Trumbore
 			let det_epsilon = 1e-8;
 			let t_epsilon   = 1e-5;
@@ -427,7 +415,7 @@ impl BHShape<f32, 3> for BvhTriangle {
 			let v0v2 = p.2 - p.0;
 			let pvec = ray.dir.cross(v0v2); 
 			let det = v0v1.dot(pvec);
-			if det < det_epsilon {return None}; 
+			if det < det_epsilon {return None};  // remove abs() for backface culling
 			let inv_det = 1. / det;
 			let tvec = ray.origin - p.0;
 			let u = tvec.dot(pvec) * inv_det;
@@ -440,20 +428,13 @@ impl BHShape<f32, 3> for BvhTriangle {
 			let hit_pos = ray.origin + ray.dir * t;
 			let w = 1. - u - v;
 			Some((hit_pos, f, u,v,w))
-			//let normal = Vector::new(0.,1.,0.);
-			//let tangent = Vector::new(0.,1.,0.);
-			//let uv = Vec2::new(1.,0.);
-			//let normal = self.interpolate_normal(f,(u,v,w));
-			//let uv = if self.has_uvs {self.interpolate_uv(f,(u,v,w))} else {Vec2::new(0.,0.)};
-			//let tangent = if self.has_uvs {self.interpolate_tangent(f,(u,v,w))} else {Vector::new(1.,0.,0.)};
-			//Some((hit_pos, normal, uv, tangent))
 		}
-		fn pre_calculate_fnormals(&mut self) {
+		fn pre_calculate_fnormals_and_ftangents(&mut self) {
 			for f in &self.faces {
 				let points = self.get_positions(f);
 				let n = self.calculate_normal(&points);
 				self.fnormals.push(n);
-				let t = self.calculate_tangent(&f);
+				let t = self.calculate_face_tangents(&f);
 				self.ftangents.push(t);
 			}
 		}
@@ -479,19 +460,6 @@ impl BHShape<f32, 3> for BvhTriangle {
 			let a = self.uvs[f.uvb];
 			let b = self.uvs[f.uvc];
 			a * u + b * v + c * w
-		}
-		fn calculate_tangent(&self, f:&Face) -> Vector {
-			let Points(v0,v1,v2) = self.get_positions(f);
-			let uv0 = self.uvs[f.uva];
-			let uv1 = self.uvs[f.uvb];
-			let uv2 = self.uvs[f.uvc];
-			let delta1 = v1 - v0;
-			let delta2 = v2 - v0;
-			let delta_uv_1 = uv1 - uv0;
-			let delta_uv_2 = uv2 - uv0;
-			let r = 1. / (delta_uv_1.x * delta_uv_2.y - delta_uv_1.y * delta_uv_2.x);
-			let tangent = (delta1 * delta_uv_2.y - delta2 * delta_uv_1.y) * r;
-			tangent.norm()
 		}
 		fn calculate_aabb_intersection(&self, ray:&Ray) -> bool {
 			let mut tmin = (self.aabb.0.x - ray.origin.x) / ray.dir.x;
@@ -528,7 +496,7 @@ impl BHShape<f32, 3> for BvhTriangle {
 		pub id: u32,
 		pub pos: Vector,
 		pub shape: Shape,
-		pub materials: Vec<Option<usize>>
+		pub materials: Vec<usize>
 	}
 
 	impl Geo
@@ -553,7 +521,7 @@ impl BHShape<f32, 3> for BvhTriangle {
 		pub fn from_mesh(mesh:Polymesh) -> Self {
 			let mut g = Geo::new();
 			// create material slots based on the number of ids on the mesh
-			g.materials = vec![None; mesh.num_materials];
+			g.materials = vec![0; mesh.num_materials];
 			g.shape = Shape::Mesh(mesh);
 			g
 		}
@@ -566,9 +534,11 @@ impl BHShape<f32, 3> for BvhTriangle {
 		
 		pub fn assign_material(mut self, slot:usize, mtl:usize) -> Self
 		{
-			let mtl_slot = self.materials.get_mut(slot);
-			if let Some(i) = mtl_slot {*i = Some(mtl)}
-			else {println!("Material slot out of range {slot}");}
+			if slot < self.materials.len() {
+				self.materials[slot] = mtl;
+			}
+			//*mtl_slot = mtl;
+			//else {println!("Material slot out of range {slot}");}
 			self
 		}
 
@@ -600,7 +570,7 @@ impl BHShape<f32, 3> for BvhTriangle {
 			let d = (self.pos - hit_pos).norm();
 			let u = 0.5 + d.z.atan2(d.x) / TWO_PI;
 			let v = 0.5 - d.y.asin() / PI;
-			let result = Hitresult::new(hit_pos, hit_normal, ray.origin, Vec2::new(u,v), self.id, self, 0);
+			let result = Hitresult::new(hit_pos, hit_normal, ray.origin, Vec2::new(u,v), Vector::zero(), self.id, self, 0);
 			Some(result)
 		}
 		pub fn calculate_plane(&self, ray:&Ray, pos: Vector, normal:Vector) -> Option<Hitresult> {
@@ -612,7 +582,7 @@ impl BHShape<f32, 3> for BvhTriangle {
 				let t = p010.dot(n) / denom;
 				if t >= 0. {
 					let hit_pos = ray.origin + ray.dir * t;
-					let hit = Hitresult::new( hit_pos, normal, ray.origin, Vec2::zero(), self.id, self, 0);
+					let hit = Hitresult::new( hit_pos, normal, ray.origin, Vec2::zero(), Vector::zero(), self.id, self, 0);
 					return Some(hit);
 				}
 			}
@@ -623,7 +593,7 @@ impl BHShape<f32, 3> for BvhTriangle {
 			let hit = mesh.cast_ray_with_bvh(ray);
 			match hit{
 				None => return None,
-				Some((p,n,uv, _t, mtl_id)) => return Some(Hitresult::new(p,n,ray.origin,uv, self.id, self, mtl_id)),
+				Some((p,n,uv, t, mtl_id)) => return Some(Hitresult::new(p,n,ray.origin,uv,t,self.id, self, mtl_id)),
 			}
 		}
 
@@ -749,7 +719,7 @@ pub mod OBJ_Importer
 				Some(&index) => *current_index = index,
 				None        => {
 					let index = materials.len();
-					println!("material {name} added at {}", index);
+					println!("mtl index {} -> from material {name}", index);
 					materials.insert(name,index);
 					*current_index = index;
 				}

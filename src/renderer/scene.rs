@@ -11,14 +11,16 @@ pub mod SceneImporter
     struct Config
     {
         camera:    TOML_Camera,
+        textures:  Vec<TOML_Texture>,
         materials: Vec<TOML_Material>,
         objects:   Vec<TOML_Geometry>,
         environment_map: Option<String>,
-        environment_rotation: Option<f32>,
+        environment_rotation_degrees: Option<f32>,
         environment_strength: Option<f32>,
         render_mode : Option<String>,
         gi_enabled : Option<bool>,
         dof_enabled : Option<bool>,
+        output_file : Option<String>,
     }
 
     #[derive(Debug, Deserialize)]
@@ -32,21 +34,35 @@ pub mod SceneImporter
         focus_dist: Option<f32>,
     }
 
+
     #[derive(Debug, Deserialize)]
-    struct TOML_Geometry
+    struct TOML_Texture
     {
-        file: String,
-        materials : Vec<String>
+        name: String,
+        file: String
     }
 
     #[derive(Debug, Deserialize)]
     struct TOML_Material
     {
         name: String,
-        color: [f32;3],
-        roughness : f32,
-        reflection_enabled : bool,
-        ior : f32
+        color: Option<[f32;3]>,
+        texture_diffuse: Option<String>,
+        texture_normals:  Option<String>,
+        texture_roughness:  Option<String>,
+        texture_roughness_strength:  Option<f32>,
+        invert_roughness_map: Option<bool>,
+        normal_strength:  Option<f32>,
+        roughness : Option<f32>,
+        reflection_enabled : Option<bool>,
+        ior : Option<f32>
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct TOML_Geometry
+    {
+        file: String,
+        materials : Vec<String>
     }
 
 
@@ -74,6 +90,26 @@ pub mod SceneImporter
 
         Ok(matrix)
     }
+
+
+
+    fn find_texture_by_name(renderer:&Renderer, name:&str) -> usize{
+        if let Some(identifier) = renderer.textures.iter().position(|x| x.name==name){
+            identifier
+        }
+        else {
+            panic!("could not find a texture with name {name}");
+        }
+    }
+
+    fn find_material_by_name(renderer:&Renderer, name:&str) -> usize{
+        if let Some(identifier) = renderer.materials.iter().position(|x| x.name==name){
+            identifier
+        }
+        else {
+            panic!("could not find material with name {name}");
+        }
+    }
     
 
 
@@ -97,17 +133,33 @@ pub mod SceneImporter
             let hdri = Texture::open_exr(hdri_path.to_str().unwrap());
             renderer.set_environment(hdri);
         }
+
         if let Some(x) = config.environment_strength{
             renderer.settings.environment_map_multiplier = x;
         }
-        if let Some(x) = config.environment_rotation{
-            renderer.settings.environment_map_rotation = x;
-        }
+        
+
+        // recreating the rotation of a blender environment
+        let degrees = match config.environment_rotation_degrees
+        {
+            Some(x) => x,
+            None => 0.0,
+        };
+        //println!("environment rotation set to {0} degrees", degrees);
+        let fraction = (-degrees - 90.0) / 360.0;
+        renderer.settings.environment_map_rotation = fraction.rem_euclid(1.0);
+        
+
+
+
         if let Some(x) = config.gi_enabled{
             renderer.settings.gi_enabled = x;
         }
         if let Some(x) = config.dof_enabled{
             renderer.settings.dof_enabled = x;
+        }
+        if let Some(x) = config.output_file{
+            renderer.settings.output_file = Some(x);
         }
 
 
@@ -149,50 +201,102 @@ pub mod SceneImporter
         if let Some(x) = config.camera.aperture_radius{
             renderer.camera.aperture_radius = x;
         }
+        
+
+        // Textures
+
+        for tex in &config.textures
+        { 
+		    let tex_path = filepath.join(&tex.file);
+            let mut new_texture = Texture::open(tex_path.to_str().unwrap());
+            new_texture.name = tex.name.clone();
+
+            let _id = renderer.add_texture(new_texture);
+
+            // store texture name
+            println!("texture {0} stored  {_id:?}", tex.name);
+        }
 
 
+
+        // Materials
 
         // collect the material names here
         // to get the material indexes later
-        let mut material_registry : Vec<String> = Vec::new();
+        //let mut material_registry : Vec<String> = Vec::new();
 
         // create materials
         for mtl in &config.materials
         { 
-            let color = Color::new(mtl.color[0], mtl.color[1], mtl.color[2]);
-            let mut new_material = Material::new()
-                .set_name(&mtl.name)
-                .set_reflection_enabled(mtl.reflection_enabled)
-                .set_roughness(mtl.roughness)
-                .set_ior(mtl.ior)
-                .set_color(color);
 
+            let mut new_material = Material::new()
+                .set_name(&mtl.name);
+           
+            if let Some(color) = mtl.color {
+                new_material = new_material.set_color(Color::new(color[0], color[1], color[2]));
+            }
+            if let Some(nstrength) = mtl.normal_strength{
+                new_material.normal_strength = nstrength;
+            }
+            if let Some(ior) = mtl.ior{
+                new_material.ior = ior;
+            }
+            if let Some(roughness) = mtl.roughness{
+                new_material.roughness = roughness;
+            }
+            if let Some(reflections) = mtl.reflection_enabled{
+                new_material = new_material.set_reflection_enabled(reflections);
+            
+            }
+            if let Some(r) = mtl.texture_roughness_strength{
+                println!("setting roughness tex amount to {r}");
+                new_material.texture_roughness_strength = r;
+            }
+            if let Some(inv) = mtl.invert_roughness_map{
+                new_material.invert_roughness_map = inv;
+            }
+            if let Some(ref tex_name) = mtl.texture_diffuse{
+                let id = find_texture_by_name(&renderer, tex_name);
+                new_material = new_material.set_texture_diffuse(id);
+                //println!("assigned diffuse texture {tex_name} to {0}", mtl.name);
+            }
+            if let Some(ref tex_name) = mtl.texture_normals{
+                let id = find_texture_by_name(&renderer, tex_name);
+                new_material = new_material.set_texture_normals(id);
+            }
+            if let Some(ref tex_name) = mtl.texture_roughness{
+                let id = find_texture_by_name(&renderer, tex_name);
+                new_material = new_material.set_texture_roughness(id);
+            }
             let _id = renderer.add_material(new_material);
+            println!("material {0} stored  {_id:?}", mtl.name);
 
             // store material name
-            material_registry.push(mtl.name.clone());
+            //material_registry.push(mtl.name.clone());
         }
 
         // create objects
         for obj in &config.objects
         { 
-            let path = filepath.join(&obj.file);
-            let mesh = OBJ_Importer::open(path.to_str().unwrap()).unwrap();
+            let mesh_path = filepath.join(&obj.file);
+            let mesh = OBJ_Importer::open(mesh_path.to_str().unwrap()).unwrap();
 		
             let mut geo = Geo::from_mesh(mesh);
             let assignments = obj.materials.len();
             let slots = geo.materials.len();
-            if assignments < slots {panic!("Not enough materials assigned. Mesh has {slots:?} slots");}
+            if assignments < slots {println!("Not enough materials assigned. {0} materials are set to default", slots-assignments);}
             if assignments > slots {println!("More materials assigned than available slots - ignoring");}
 
-            // assign the materials that have are owned by the renderer now
-            for (i,mat_name) in obj.materials.iter().enumerate()
+
+
+            // assign the materials that are owned by the renderer now
+            // find it by name and assign material identifier
+            for (slot,mat_name) in obj.materials.iter().enumerate()
             {
-                if let Some(identifier) = material_registry.iter().position(|x| x==mat_name)
-                {
-                    geo = geo.assign_material(i, identifier);
-                }
-                else {println!("Could not assign material {mat_name}");}
+                let index = find_material_by_name(&renderer,mat_name);
+                geo = geo.assign_material(slot, index);
+                //println!("trying to find {mat_name}, found {0} at index {index}", renderer.materials[index].name);
+                //println!("assigning to material id {slot}");
             }
             renderer.add(geo);
         }

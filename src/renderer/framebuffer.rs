@@ -83,9 +83,9 @@ impl FrameBuffer
         }
         img
     }
-    pub fn write_exr(&self)
+    pub fn write_exr(&self, file:&str)
     {
-	    write_rgba_file("out.exr",self.width as usize,self.height as usize, |x, y| 
+	    write_rgba_file(file,self.width as usize,self.height as usize, |x, y| 
         {
 				let c = self.get(x as u32, y as u32);
 				(c.r, c.g, c.b, 1.0)

@@ -204,19 +204,15 @@ pub struct Camera {
 			let dir = (t - o).norm();
 			Ray::from_direction(o, dir)
 		}
-		pub fn biased_from_target(origin:Vector, target:Vector) -> Ray {
-			let mut r = Ray::from_target(origin, target);
-			r.make_bias();
-			r
+		
+		pub fn biased_from_target(origin:Vector, normal:Vector, target:Vector) -> Ray {
+			let o = origin + normal * 0.001;
+			let direction = (target-origin).norm();
+			Ray::from_direction(o,direction)
 		}
-		fn make_bias(&mut self) {
-			let bias = 0.0001;
-			self.origin += self.dir * bias;
-		}
-		pub fn biased_from_direction(o: Vector, d: Vector) -> Ray { 
-			let mut r = Ray::from_direction(o,d);
-			r.make_bias();
-			r
+	
+		pub fn biased_from_direction(origin: Vector, n:Vector, direction: Vector) -> Ray { 
+			Ray::from_direction(origin + n*0.001, direction)
 		}
 		pub fn get_pos(&self, dist: f32) -> Vector {
 			self.origin + self.dir * dist

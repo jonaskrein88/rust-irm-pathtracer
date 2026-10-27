@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rand = "0.9"
+rand = { version = "0.9", features = ["small_rng"] }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 regex = "1.10"
