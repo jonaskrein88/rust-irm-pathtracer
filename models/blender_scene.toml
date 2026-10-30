@@ -1,0 +1,50 @@
+environment_map="1103 Sun Clouds.exr"
+environment_strength = 0.05
+#render_mode="gi"
+
+
+
+
+
+[camera]
+focal_length = 36.0
+blender_cam = "<Matrix 4x4 (0.9253, -0.1665,  0.3408,  3.1437) (0.3793,  0.4062, -0.8313, -5.8090)(0.0000,  0.8985,  0.4390,  4.0019)(0.0000,  0.0000,  0.0000,  1.0000)>"
+
+
+
+
+[[materials]]
+name="grey"
+color = [0.75,0.75,0.75]
+reflection_enabled = true
+ior = 1.6
+roughness = 0.2
+
+[[materials]]
+name="white"
+color = [1.0,1.0,1.0]
+reflection_enabled = false
+ior = 1.6
+roughness = 0.1
+
+[[materials]]
+name="red"
+color = [1.0, 0.0, 0.0]
+reflection_enabled = true
+roughness = 0.1
+ior = 2.0
+
+[[materials]]
+name="blue"
+color = [0.0, 0.0, 1.0]
+reflection_enabled = true
+roughness = 0.1
+ior = 1.6
+
+
+
+
+[[objects]]
+file = "blender_test.obj"
+materials = ["white","grey","blue"]
+

@@ -1,0 +1,24 @@
+[package]
+name = "raytracer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rand = { version = "0.9", features = ["small_rng"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+regex = "1.10"
+image = "*"
+exr = "*"
+rayon = "*"
+chrono = "*"
+kdtree = "*"
+piston = "*"
+bvh = "0.13.0"
+nalgebra = "*"
+piston_window = "*"
+piston2d-graphics = "*"
+pistoncore-glutin_window = "*"
+piston2d-opengl_graphics = "*"
