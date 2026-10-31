@@ -905,7 +905,7 @@ impl Renderer
 						None          => self.sample_environment(ray.dir)
 					};
 
-					accum += (sample_color * weight).clamp(3.0);
+					accum += (sample_color * weight).clamp(5.0);
 				}
 			}
 			accum / (samples as f32)

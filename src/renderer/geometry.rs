@@ -404,7 +404,7 @@ impl BHShape<f32, 3> for BvhTriangle {
 		// returns Option ( position, Face, Barycentic)
 		fn calculate_hit<'a>(&self, ray: &Ray, f:&'a Face, n:&Vector) -> Option<(Vector, &'a Face, f32,f32,f32)> 
 		{
-			if n.dot(ray.dir) > 0.0 { return None;} // uncomment for backface culling
+			//if n.dot(ray.dir) > 0.0 { return None;} // uncomment for backface culling
 			// Möller-Trumbore
 			let det_epsilon = 1e-8;
 			let t_epsilon   = 1e-5;
@@ -415,7 +415,7 @@ impl BHShape<f32, 3> for BvhTriangle {
 			let v0v2 = p.2 - p.0;
 			let pvec = ray.dir.cross(v0v2); 
 			let det = v0v1.dot(pvec);
-			if det < det_epsilon {return None};  // remove abs() for backface culling
+			if det.abs() < det_epsilon {return None};  // remove abs() for backface culling
 			let inv_det = 1. / det;
 			let tvec = ray.origin - p.0;
 			let u = tvec.dot(pvec) * inv_det;

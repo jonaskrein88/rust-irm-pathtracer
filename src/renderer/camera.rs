@@ -211,8 +211,10 @@ pub struct Camera {
 			Ray::from_direction(o,direction)
 		}
 	
-		pub fn biased_from_direction(origin: Vector, n:Vector, direction: Vector) -> Ray { 
-			Ray::from_direction(origin + n*0.001, direction)
+		pub fn biased_from_direction(origin: Vector, n:Vector, direction: Vector) -> Ray
+		{ 
+			let epsilon = 1e-4_f32; 
+			Ray::from_direction(origin + n*epsilon, direction)
 		}
 		pub fn get_pos(&self, dist: f32) -> Vector {
 			self.origin + self.dir * dist

@@ -186,7 +186,7 @@ impl EnvironmentCdf
             -theta.sin() * phi.sin(),
             theta.cos(),
             theta.sin() * phi.cos(),
-        );
+        ).norm();
 
         let radiance = texture.get(x, y);
 
@@ -196,8 +196,9 @@ impl EnvironmentCdf
         let theta0 = std::f32::consts::PI * y as f32 / self.height as f32;
         let theta1 = std::f32::consts::PI * (y + 1) as f32 / self.height as f32;
 
-        let solid_angle = (2.0 * std::f32::consts::PI / self.width as f32) * (theta0.cos() - theta1.cos());
-        let pdf = texel_probability / solid_angle;
+        let delta_cos = (theta0.cos() - theta1.cos()).abs();
+        let solid_angle = (2.0 * std::f32::consts::PI / self.width as f32) * delta_cos;
+        let pdf = if solid_angle > 1e-6 { texel_probability / solid_angle } else { 0.0 };
 
         EnvironmentSample { direction, radiance, pdf }
     }

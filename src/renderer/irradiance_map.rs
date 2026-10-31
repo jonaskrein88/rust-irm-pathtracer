@@ -9,9 +9,10 @@ use kdtree::distance::squared_euclidean;
 
 
 // color thresholds
-// Default Threshold (0.12 - 0.15)
-// Lower values (0.05) = higher quality, slower renders.
-// Higher values (0.25) = faster renders, risk of splotches.
+
+// (0.05)        higher quality, slower renders.
+// (0.12 - 0.15) Default Threshold
+// (0.25)        faster renders, risk of splotches.
 
 // Dot Threshold
 // 0.966 - 15 degrees deviation (High Quality)
@@ -20,7 +21,8 @@ use kdtree::distance::squared_euclidean;
 
 pub struct IR_Map {
 	samples: KdTree<f32, (Color,Vector), [f32;3]>,
-	max_angle: f32,
+	normal_threshold: f32,
+	color_threshold: f32,
 	max_dist: f32,
 }
 impl IR_Map 
@@ -28,8 +30,9 @@ impl IR_Map
 	pub fn new() -> Self {
 		IR_Map{
 			samples:KdTree::new(3),
-			max_angle: 0.01,
-			max_dist: 0.5,
+			normal_threshold: 0.7,
+			color_threshold: 0.15,
+			max_dist: 0.75,
 		}
 	}
 	pub fn near_points(&self, p:Vector, num:usize) -> Vec<(f32, &(Color,Vector))> {
@@ -50,7 +53,7 @@ impl IR_Map
 			if d > self.max_dist * self.max_dist {
 				continue;
 			}
-			if n.angle_between(hit.normal) > self.max_angle {
+			if n.dot(hit.normal) < self.normal_threshold {
 				continue;
 			}
 			return Some(c);
@@ -104,19 +107,17 @@ impl<'a> IR_Hit_Cloud<'a>
 		let contrast = (y_a - y_b).abs() / (0.5 * (y_a + y_b) + epsilon);
 		contrast
 	}
-	pub fn has_good_sample(&self, hit: &Hitresult, sampleColor:Color, max_dist:f32, max_angle:f32) -> bool {
+	pub fn has_good_sample(&self, hit: &Hitresult, sampleColor:Color, max_dist:f32, normal_threshold:f32, color_threshold:f32) -> bool {
 		let near = self.near_points(hit.pos, 8);
-		for (d, closest_sample) in near {
+		for (d, closest_sample) in near 
+		{
 			if d > max_dist*max_dist {
 				continue;
 			}
-			if closest_sample.hit.normal.angle_between(hit.normal).abs() > max_angle {
+			if closest_sample.hit.normal.dot(hit.normal) < normal_threshold{
 				continue;
 			}
-			if closest_sample.hit.normal.angle_between(hit.normal).abs() > max_angle {
-				continue;
-			}
-			if Self::compare_colors(closest_sample.color, sampleColor) > 0.12{
+			if Self::compare_colors(closest_sample.color, sampleColor) > color_threshold {
 				continue;
 			}
 			return true;
@@ -152,40 +153,34 @@ impl Renderer
 		self.cast_ray(&ray)
 	}
 
+
+	fn calc_rough_sample_guess(&self, hit:&Hitresult, rng:&mut impl Rng) -> Color 
+	{
+		let direct = self.approximate_direct_shading(&hit, hit.origin_pos, 24, rng);
+		let num_samples = 8;
+		let mut accum = Color::black();	
+		for _ in 0..num_samples
+		{
+			let direction = Vector::cosine_sample_hemisphere(hit.normal, rng);
+			let ray = Ray::biased_from_direction(hit.pos, hit.normal, direction);
+			if let Some(second_hit) = self.cast_ray(&ray)
+			{
+				let surface = self.approximate_direct_shading(&second_hit, hit.pos, 16, rng);
+				accum += surface;
+			}
+		}
+		direct + accum / num_samples as f32
+	}
+	
+
+
+
+
 	pub fn create_ir(&mut self) {
 		let samples = self.settings.irradiance_map_primary_samples;
-		let secondary_samples = 8;
-		let max_depth = 2;
+		let secondary_samples = 2;
 
 		let camera_pos = self.camera.get_pos();
-		/*
-		// Collect all the sample positions
-		// samples are an iterator over Hitresults
-		let gathered_hits = (0..samples)
-			.into_par_iter()
-			.flat_map_iter(|i| {
-				// collect into Vec<Vec<Hitresult>>
-				let mut path = Vec::new();
-				let mut rng = SmallRng::from_rng(&mut rand::rng()); 
-				
-				if let Some(mut hit) = self.cast_random_eye_ray(i as i32) {
-					path.push(hit);
-					
-					for _ in 0..(max_depth - 1) {
-						let direction = Vector::cosine_sample_hemisphere(hit.normal, &mut rng);
-						let ray = Ray::biased_from_direction(hit.pos,hit.normal, direction);
-						
-						if let Some(next_hit) = self.cast_ray(&ray) {
-							path.push(hit);
-							hit = next_hit;
-						} else {
-							break;
-						}
-					}
-				}
-				path
-			}).collect::<Vec<Hitresult>>();
-		*/
 		
 
 		// Finding all the sample positions first
@@ -209,8 +204,8 @@ impl Renderer
 					if let Some(mut hit) = self.cast_random_eye_ray(&mut rng)
 					{
 						//see if we found a sample close by that is good enough
-						let color = self.approximate_direct_shading(&hit, camera_pos, 128, &mut rng);
-						if sample_cloud.has_good_sample(&hit, color, self.irradiance_map.max_dist, self.irradiance_map.max_angle) {return None;}
+						let color = self.calc_rough_sample_guess(&hit, &mut rng);
+						if sample_cloud.has_good_sample(&hit, color, self.irradiance_map.max_dist, self.irradiance_map.normal_threshold,self.irradiance_map.color_threshold) {return None;}
 						// we didn't. collect the hit and add it to the pile later
 						else {return Some(IR_Hit_Sample{hit, color});}
 					}
@@ -247,7 +242,7 @@ impl Renderer
 						{
 							// we found a sample close by that is good enough
 							let color = self.approximate_direct_shading(&hit, sample.pos, 32, &mut rng);
-							if sample_cloud.has_good_sample(&hit, color, self.irradiance_map.max_dist, self.irradiance_map.max_angle) {continue;}
+							if sample_cloud.has_good_sample(&hit, color, self.irradiance_map.max_dist, self.irradiance_map.normal_threshold, self.irradiance_map.color_threshold) {continue;}
 							// we didn't. collect the hit and add it to the pile later
 							else {new_hits.push(hit);}
 						}
@@ -319,7 +314,7 @@ impl Renderer
 
 		
 		
-		for _ in (0..3)
+		for _ in (0..5)
 		{
 			let hits = sample_vec
 			.clone()
@@ -340,12 +335,12 @@ impl Renderer
 					// we have a secondary hit
 					if let Some(hit) = self.cast_ray(&ray)
 					{
-						let other_direct = self.approximate_direct_shading(&hit, sample.pos, 128, &mut rng);
+						//let other_direct = self.approximate_direct_shading(&hit, sample.pos, 64, &mut rng);
 						let other_gi = self.ir_read(&self.irradiance_map, hit.pos, hit.normal);
-						accum += other_direct + other_gi;
+						accum += other_gi;
 					}
 				}
-				let out = direct + accum / secondary_samples as f32 * albedo;
+				let out = direct + (accum / secondary_samples as f32) * albedo;
 				(sample.pos, sample.normal, out)
 				
 			}).collect::<Vec<(Vector,Vector,Color)>>();

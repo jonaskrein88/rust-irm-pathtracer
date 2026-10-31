@@ -116,7 +116,7 @@ pub mod SceneImporter
     pub fn import_scene(renderer : &mut Renderer, mut filepath:PathBuf)
     {
         let contents = fs::read_to_string(filepath.to_str().unwrap())
-            .expect("Something went wrong while trying to access the scene file");
+            .expect("Something went wrong while trying to access the TOML Scene config file");
 
         // deserialize the String into Config struct
         let config: Config = toml::from_str(&contents)
@@ -252,7 +252,6 @@ pub mod SceneImporter
             
             }
             if let Some(r) = mtl.texture_roughness_strength{
-                println!("setting roughness tex amount to {r}");
                 new_material.texture_roughness_strength = r;
             }
             if let Some(inv) = mtl.invert_roughness_map{
