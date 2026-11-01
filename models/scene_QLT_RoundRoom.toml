@@ -93,6 +93,6 @@ ior = 1.4
 
 
 [[objects]]
-file = "roundroom_00.obj"
+file = "QLT_RoundRoom.obj"
 materials = ["walls","brown","ceramic", "floor"]
 

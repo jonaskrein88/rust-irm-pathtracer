@@ -3,7 +3,7 @@ environment_rotation_degrees = 20.0
 environment_strength = 3.0
 
 
-output_file = "O:/03_User/01_sooii/Jonas/rnd/Coding/raytracer/QLT_moon.exr"
+output_file = "QLT_moon.exr"
 
 #gi_enabled=false
 #render_mode="irradiance_map"

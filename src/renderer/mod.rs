@@ -474,9 +474,9 @@ impl Renderer
 				out = out + diffuse;
 			}
 		*/
-		let env = self.calculate_environment_lighting(pos, normal, environment_samples, rng).clamp(3.0); // clamp direct environment light at 3
+		let env = self.calculate_environment_lighting(pos, normal, environment_samples, rng);
 		//out += env;
-		return env;
+		return env.clamp(10.0);
 	}
 
 
@@ -662,7 +662,7 @@ impl Renderer
 			total_diffuse
 		};
 
-		out.clamp(5.0)
+		out.clamp(10.0)
 	}
 
 

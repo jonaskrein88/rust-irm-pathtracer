@@ -1,0 +1,98 @@
+environment_map="textures/cgsource_cloudy_sun48deg_0079_02.exr"
+environment_rotation_degrees = 165
+environment_strength = 20.0
+
+
+output_file = "QLT_RoundRoom.exr"
+
+#gi_enabled=false
+#render_mode="irradiance_map"
+#render_mode="ir_samples"
+#render_mode="gi"
+#render_mode="reflections"
+#render_mode="focus"
+#dof_enabled=true
+
+
+[camera]
+image_size = [1200,1200]
+focal_length = 40.0
+focus_dist = 5.25
+aperture_radius = 0.125
+blender_cam = "<Matrix 4x4 ( 0.9817,  0.0223,  0.1890,  1.8802)( 0.1903, -0.1150, -0.9750, -4.9569)(-0.0000,  0.9931, -0.1171,  1.0112)( 0.0000,  0.0000,  0.0000,  1.0000)>"
+
+
+[[textures]]
+name="floor_diffuse"
+file = "textures/td2nacug_4K_Albedo.jpg"
+
+[[textures]]
+name="floor_normals"
+file = "textures/td2nacug_4K_Normal.jpg"
+
+[[textures]]
+name="floor_gloss"
+file = "textures/td2nacug_4K_Gloss.jpg"
+
+
+[[materials]]
+name="floor"
+texture_diffuse   = "floor_diffuse"
+texture_roughness = "floor_gloss"
+reflection_enabled = true
+ior = 2.0
+roughness = 0.0
+texture_roughness_strength = 0.35
+invert_roughness_map = true
+
+
+
+[[textures]]
+name="wall_diffuse"
+file = "textures/plaster11/Plaster11_COL_VAR2_3K.jpg"
+[[textures]]
+name="wall_normal"
+file = "textures/plaster11/Plaster11_NRM_3K.jpg"
+
+[[materials]]
+name="walls"
+#texture_diffuse = "wall_diffuse"
+color = [0.9, 0.7, 0.7]
+reflection_enabled = false
+ior = 1.4
+roughness = 0.4
+
+
+
+
+
+
+[[materials]]
+name="ceramic"
+color = [0.9, 0.7, 0.7]
+reflection_enabled = true
+ior = 1.6
+roughness = 0.01
+
+
+[[materials]]
+name="red"
+color = [1.0, 0.0, 0.0]
+reflection_enabled = true
+roughness = 0.01
+ior = 1.4
+
+[[materials]]
+name="brown"
+color = [0.025, 0.00525, 0.0]
+reflection_enabled = true
+roughness = 0.1
+ior = 1.4
+
+
+
+
+[[objects]]
+file = "QLT_Stone.obj"
+materials = ["walls","brown","ceramic", "floor"]
+

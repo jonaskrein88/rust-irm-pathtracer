@@ -1,0 +1,116 @@
+environment_map="textures/yellow_field.exr"
+environment_rotation_degrees = 20.0
+environment_strength = 3.0
+
+
+output_file = "QLT_moon_ir.exr"
+
+#gi_enabled=false
+#render_mode="irradiance_map"
+render_mode="ir_samples"
+#render_mode="gi"
+#render_mode="reflections"
+#render_mode="focus"
+#render_mode="albedo"
+#dof_enabled=true
+
+
+[camera]
+image_size = [1200,1200]
+focal_length = 40.0
+focus_dist = 5.25
+aperture_radius = 0.125
+blender_cam = "<Matrix 4x4 (1.0000,  0.0000,  0.0000, -0.6040)(0.0000, -0.0000, -1.0000, -6.3322)(0.0000,  1.0000, -0.0000,  1.4161)(0.0000,  0.0000,  0.0000,  1.0000)>"
+
+
+
+
+[[textures]]
+name="floor_diffuse"
+file = "textures/Concrete/ConcreteFloors0065_9_H.jpg"
+
+[[materials]]
+name="floor"
+color=[1,1,1]
+texture_diffuse     = "floor_diffuse"
+texture_roughness   = "floor_diffuse"
+texture_roughness_strength = 0.9
+#invert_roughness_map = true
+reflection_enabled = true
+ior = 1.6
+roughness = 0.0
+
+
+
+
+
+
+[[textures]]
+name="wall_diffuse"
+file = "textures/antoine_plaster/Antoine_Clay Structure brushed_glossiness.jpg"
+
+
+[[materials]]
+name="walls"
+texture_diffuse    = "wall_diffuse"
+texture_roughness  = "wall_diffuse"
+color = [0.9, 0.9, 0.85]
+reflection_enabled = true
+invert_roughness_map = true
+ior = 1.4
+texture_roughness_strength = 0.5
+roughness = 0.0
+
+[[materials]]
+name="ceiling"
+texture_diffuse    = "wall_diffuse"
+texture_roughness  = "wall_diffuse"
+color = [0.9, 0.9, 0.85]
+reflection_enabled = true
+invert_roughness_map = true
+ior = 1.6
+texture_roughness_strength = 0.5
+roughness = 0.0
+
+
+
+
+
+
+
+
+
+[[materials]]
+name="ceramic"
+color = [0.05, 0.05, 0.05]
+reflection_enabled = true
+ior = 1.6
+roughness = 0.75
+
+
+
+[[materials]]
+name="iron"
+color = [0.75, 0.25, 0.1]
+reflection_enabled = true
+texture_roughness  = "wall_diffuse"
+texture_roughness_strength = 0.5
+invert_roughness_map = true
+roughness = 0.0
+ior = 1.6
+
+[[materials]]
+name="brown"
+color = [0.047, 0.031, 0.024]
+reflection_enabled = true
+roughness = 0.3
+ior = 1.6
+
+
+
+
+[[objects]]
+file = "qlt_moon.obj"
+materials = ["walls", "ceiling", "iron", "brown", "ceramic", "brown", "floor"]
+
+

@@ -280,9 +280,11 @@ impl Renderer
 			{
 				let mut rng = SmallRng::from_rng(&mut rand::rng()); 
 				let mut accum = Color::black();
+				let material = self.get_material(&sample);
+				let albedo = material.get_albedo(&self, sample.uv); 
 
 				let direct = self.approximate_direct_shading(&sample, camera_pos, 128, &mut rng);
-				/*
+				
 				for _ in 0..secondary_samples
 				{
 					let direction = Vector::cosine_sample_hemisphere(sample.normal, &mut rng);
@@ -290,13 +292,13 @@ impl Renderer
 					// we have a secondary hit
 					if let Some(hit) = self.cast_ray(&ray)
 					{
-						let surface = self.approximate_direct_shading(&hit, sample.pos, &mut rng);
+						let surface = self.approximate_direct_shading(&hit, sample.pos, 32, &mut rng);
 						accum += surface;
 					}
 				}
-				let out = direct + accum / secondary_samples as f32;
-				*/
-				let out = direct;
+				let out = direct + accum / secondary_samples as f32 * albedo;
+				
+				//let out = direct;
 				(sample.pos, sample.normal, out)
 				
 			}).collect::<Vec<(Vector,Vector,Color)>>();
@@ -312,9 +314,9 @@ impl Renderer
 		// now we are starting a recursive loop that will sample the ir in addition to direct light
 		// and overwrite the ir
 
+		let num_samples = 64;	
 		
-		
-		for _ in (0..5)
+		for _ in (0..2)
 		{
 			let hits = sample_vec
 			.clone()
@@ -324,23 +326,23 @@ impl Renderer
 				let mut rng = SmallRng::from_rng(&mut rand::rng()); 
 				let mut accum = Color::black();
 
-				let direct = self.approximate_direct_shading(&sample, camera_pos, 64, &mut rng);
+				let direct = self.approximate_direct_shading(&sample, camera_pos, 128, &mut rng);
 				let material = self.get_material(&sample);
 				let albedo = material.get_albedo(&self, sample.uv); 
 
-				for _ in 0..secondary_samples
+				for _ in 0..num_samples
 				{
 					let direction = Vector::cosine_sample_hemisphere(sample.normal, &mut rng);
 					let ray = Ray::biased_from_direction(sample.pos, sample.normal, direction);
 					// we have a secondary hit
 					if let Some(hit) = self.cast_ray(&ray)
 					{
-						//let other_direct = self.approximate_direct_shading(&hit, sample.pos, 64, &mut rng);
-						let other_gi = self.ir_read(&self.irradiance_map, hit.pos, hit.normal);
+						let other_gi = self.ir_read(&ir, hit.pos, hit.normal);
 						accum += other_gi;
 					}
 				}
-				let out = direct + (accum / secondary_samples as f32) * albedo;
+				let indirect = (accum / num_samples as f32) * albedo;
+				let out = direct + indirect;
 				(sample.pos, sample.normal, out)
 				
 			}).collect::<Vec<(Vector,Vector,Color)>>();

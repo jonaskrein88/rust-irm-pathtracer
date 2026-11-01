@@ -65,7 +65,7 @@ pub mod SceneImporter
         materials : Vec<String>
     }
 
-
+    // import bpy; print(bpy.context.scene.camera.matrix_world)
     // unpack the printed matrix string to a 2d array
     fn parse_blender_matrix(matrix_str: &str) -> Result<[[f32; 4]; 4], String>
     {
