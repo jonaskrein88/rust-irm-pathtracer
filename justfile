@@ -24,4 +24,7 @@ moon_ir:
 	target/release/raytracer.exe models/scene_QLT_Moon_ir.toml
 
 
+# show direct light only
+moon_direct:
+	target/release/raytracer.exe models/scene_QLT_Moon_direct.toml
 
